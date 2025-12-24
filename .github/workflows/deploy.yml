@@ -36,6 +36,14 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
           
+          # Configure SSH to keep connection alive
+          cat >> ~/.ssh/config << EOF
+Host *
+  ServerAliveInterval 60
+  ServerAliveCountMax 10
+  TCPKeepAlive yes
+EOF
+          
           # Create .env content
           {
             echo "API_ID=$API_ID"
@@ -53,19 +61,28 @@ jobs:
           scp -i ~/.ssh/deploy_key /tmp/.env "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/.env"
           
           # Deploy to server
-          ssh -i ~/.ssh/deploy_key "${SSH_USER}@${SSH_HOST}" bash << ENDSSH
-            cd ${DEPLOY_PATH}
+          ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=60 -o ServerAliveCountMax=10 "${SSH_USER}@${SSH_HOST}" "cd ${DEPLOY_PATH} && bash -s" << 'ENDSSH'
+            set -e
             
-            # Pull latest code
+            echo "==> Pulling latest code..."
             git pull origin main
             
-            # Deploy with docker compose
-            docker compose pull
-            docker compose up -d --build
+            echo "==> Stopping existing containers..."
+            docker compose down || true
             
-            # Show status
+            echo "==> Building Docker image (this may take a few minutes)..."
+            docker compose build --no-cache
+            
+            echo "==> Starting containers..."
+            docker compose up -d
+            
+            echo "==> Waiting for container to be ready..."
+            sleep 5
+            
+            echo "==> Container status:"
             docker compose ps
-            echo "Deployment completed!"
+            
+            echo "==> Deployment completed!"
           ENDSSH
       
       - name: Verify deployment
@@ -76,8 +93,10 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           # Check if container is running
-          ssh -i ~/.ssh/deploy_key "${SSH_USER}@${SSH_HOST}" bash << ENDSSH
-            cd ${DEPLOY_PATH}
+          ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=60 "${SSH_USER}@${SSH_HOST}" "cd ${DEPLOY_PATH} && bash -s" << 'ENDSSH'
+            echo "==> Container status:"
             docker compose ps
-            docker compose logs --tail=20
+            echo ""
+            echo "==> Recent logs:"
+            docker compose logs --tail=30
           ENDSSH
