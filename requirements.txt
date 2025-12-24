@@ -1,0 +1,10 @@
+# Telegram client library for userbot functionality
+Telethon==1.35.0
+
+# Environment variable management
+python-dotenv==1.0.0
+
+# Cryptography for Telethon sessions
+cryptography==41.0.7
+
+

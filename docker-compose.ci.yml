@@ -1,0 +1,49 @@
+version: '3.8'
+
+# Docker Compose configuration for CI/CD environments
+# Uses environment variables from GitHub Secrets instead of .env file
+
+services:
+  telegram-userbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-marketplace-monitor
+    restart: unless-stopped
+    
+    # Environment variables from GitHub Secrets
+    environment:
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+      - TARGET_USER_ID=${TARGET_USER_ID}
+      - KEYWORDS=${KEYWORDS}
+      - AUTO_REPLY_ENABLED=${AUTO_REPLY_ENABLED:-false}
+      - AUTO_REPLY_TEXT=${AUTO_REPLY_TEXT:-Interested!}
+      - AUTO_REPLY_MIN_DELAY=${AUTO_REPLY_MIN_DELAY:-5}
+      - AUTO_REPLY_MAX_DELAY=${AUTO_REPLY_MAX_DELAY:-15}
+      - SESSION_NAME=${SESSION_NAME:-userbot_session}
+    
+    # Persist session, database, and logs
+    volumes:
+      - ./data/userbot_session.session:/app/userbot_session.session
+      - ./data/userbot_session.session-journal:/app/userbot_session.session-journal
+      - ./data/processed_messages.db:/app/processed_messages.db
+      - ./data/processed_messages.db-journal:/app/processed_messages.db-journal
+      - ./data/userbot.log:/app/userbot.log
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "python"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+

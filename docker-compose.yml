@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  telegram-userbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram-marketplace-monitor
+    restart: unless-stopped
+    
+    # Environment variables from .env file
+    env_file:
+      - .env
+    
+    # Persist session, database, and logs
+    volumes:
+      - ./userbot_session.session:/app/userbot_session.session
+      - ./userbot_session.session-journal:/app/userbot_session.session-journal
+      - ./processed_messages.db:/app/processed_messages.db
+      - ./processed_messages.db-journal:/app/processed_messages.db-journal
+      - ./userbot.log:/app/userbot.log
+    
+    # Copy config.py changes without rebuilding
+    # Uncomment if you want to mount config.py for easier editing
+    # volumes:
+    #   - ./config.py:/app/config.py:ro
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Health check (optional - checks if the process is running)
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "python"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+
