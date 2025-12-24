@@ -37,17 +37,17 @@ jobs:
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
           
           # Create .env content
-          cat > /tmp/.env << EOF
-API_ID=$API_ID
-API_HASH=$API_HASH
-TARGET_USER_ID=$TARGET_USER_ID
-KEYWORDS=$KEYWORDS
-AUTO_REPLY_ENABLED=${AUTO_REPLY_ENABLED:-false}
-AUTO_REPLY_TEXT=$AUTO_REPLY_TEXT
-AUTO_REPLY_MIN_DELAY=${AUTO_REPLY_MIN_DELAY:-5}
-AUTO_REPLY_MAX_DELAY=${AUTO_REPLY_MAX_DELAY:-15}
-SESSION_NAME=userbot_session
-EOF
+          {
+            echo "API_ID=$API_ID"
+            echo "API_HASH=$API_HASH"
+            echo "TARGET_USER_ID=$TARGET_USER_ID"
+            echo "KEYWORDS=$KEYWORDS"
+            echo "AUTO_REPLY_ENABLED=${AUTO_REPLY_ENABLED:-false}"
+            echo "AUTO_REPLY_TEXT=$AUTO_REPLY_TEXT"
+            echo "AUTO_REPLY_MIN_DELAY=${AUTO_REPLY_MIN_DELAY:-5}"
+            echo "AUTO_REPLY_MAX_DELAY=${AUTO_REPLY_MAX_DELAY:-15}"
+            echo "SESSION_NAME=userbot_session"
+          } > /tmp/.env
           
           # Copy .env file to server
           scp -i ~/.ssh/deploy_key /tmp/.env "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/.env"
