@@ -36,14 +36,6 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
           
-          # Configure SSH to keep connection alive
-          cat >> ~/.ssh/config << EOF
-Host *
-  ServerAliveInterval 60
-  ServerAliveCountMax 10
-  TCPKeepAlive yes
-EOF
-          
           # Create .env content
           {
             echo "API_ID=$API_ID"
