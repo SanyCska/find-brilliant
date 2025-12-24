@@ -12,13 +12,9 @@ services:
     env_file:
       - .env
     
-    # Persist session, database, and logs
+    # Persist session, database, and logs in a data directory
     volumes:
-      - ./userbot_session.session:/app/userbot_session.session
-      - ./userbot_session.session-journal:/app/userbot_session.session-journal
-      - ./processed_messages.db:/app/processed_messages.db
-      - ./processed_messages.db-journal:/app/processed_messages.db-journal
-      - ./userbot.log:/app/userbot.log
+      - ./data:/app/data
     
     # Copy config.py changes without rebuilding
     # Uncomment if you want to mount config.py for easier editing

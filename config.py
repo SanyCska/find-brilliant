@@ -33,8 +33,8 @@ class Config:
     AUTO_REPLY_MIN_DELAY: int = int(os.getenv("AUTO_REPLY_MIN_DELAY", "5"))
     AUTO_REPLY_MAX_DELAY: int = int(os.getenv("AUTO_REPLY_MAX_DELAY", "15"))
     
-    # Session file name
-    SESSION_NAME: str = os.getenv("SESSION_NAME", "userbot_session")
+    # Session file name (stored in data directory)
+    SESSION_NAME: str = os.getenv("SESSION_NAME", "data/userbot_session")
     
     # Polling interval for large groups (in seconds)
     # For large supergroups, Telegram doesn't push updates, so we poll periodically

@@ -15,11 +15,14 @@ from filters import KeywordFilter
 from notifier import MessageNotifier
 
 # Configure logging
+import os
+os.makedirs('data', exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('userbot.log'),
+        logging.FileHandler('data/userbot.log'),
         logging.StreamHandler()
     ]
 )
@@ -43,7 +46,7 @@ class TelegramMarketplaceBot:
             Config.API_HASH
         )
         
-        self.storage = MessageStorage()
+        self.storage = MessageStorage('data/processed_messages.db')
         self.keyword_filter = KeywordFilter(Config.KEYWORDS)
         self.notifier = MessageNotifier(self.client, Config.TARGET_USER_ID)
         

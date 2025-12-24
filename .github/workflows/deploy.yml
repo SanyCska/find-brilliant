@@ -46,7 +46,7 @@ jobs:
             echo "AUTO_REPLY_TEXT=$AUTO_REPLY_TEXT"
             echo "AUTO_REPLY_MIN_DELAY=${AUTO_REPLY_MIN_DELAY:-5}"
             echo "AUTO_REPLY_MAX_DELAY=${AUTO_REPLY_MAX_DELAY:-15}"
-            echo "SESSION_NAME=userbot_session"
+            echo "SESSION_NAME=data/userbot_session"
           } > /tmp/.env
           
           # Copy .env file to server
@@ -58,6 +58,9 @@ jobs:
             
             echo "==> Pulling latest code..."
             git pull origin main
+            
+            echo "==> Creating data directory..."
+            mkdir -p data
             
             echo "==> Stopping existing containers..."
             docker compose down || true
