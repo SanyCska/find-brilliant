@@ -16,6 +16,7 @@ class Config:
     # Telegram API credentials
     API_ID: int = int(os.getenv("API_ID", "0"))
     API_HASH: str = os.getenv("API_HASH", "")
+    PHONE_NUMBER: str = os.getenv("PHONE_NUMBER", "")
     
     # Target user to forward messages to
     TARGET_USER_ID: int = int(os.getenv("TARGET_USER_ID", "0"))
@@ -62,6 +63,9 @@ class Config:
         if not cls.API_HASH:
             errors.append("API_HASH is required")
         
+        if not cls.PHONE_NUMBER:
+            errors.append("PHONE_NUMBER is required (e.g., +79933707439)")
+        
         if not cls.TARGET_USER_ID or cls.TARGET_USER_ID == 0:
             errors.append("TARGET_USER_ID is required")
         
@@ -92,6 +96,7 @@ class Config:
         print("=" * 60)
         print(f"API_ID: {cls.API_ID}")
         print(f"API_HASH: {'*' * len(cls.API_HASH) if cls.API_HASH else '(not set)'}")
+        print(f"PHONE_NUMBER: {cls.PHONE_NUMBER if cls.PHONE_NUMBER else '(not set)'}")
         print(f"TARGET_USER_ID: {cls.TARGET_USER_ID}")
         print(f"KEYWORDS: {cls.KEYWORDS}")
         print(f"CHAT_IDS: {cls.CHAT_IDS}")

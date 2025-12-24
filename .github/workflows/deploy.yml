@@ -23,6 +23,7 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
           TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
           KEYWORDS: ${{ secrets.KEYWORDS }}
           AUTO_REPLY_ENABLED: ${{ secrets.AUTO_REPLY_ENABLED }}
@@ -40,6 +41,7 @@ jobs:
           {
             echo "API_ID=$API_ID"
             echo "API_HASH=$API_HASH"
+            echo "PHONE_NUMBER=$PHONE_NUMBER"
             echo "TARGET_USER_ID=$TARGET_USER_ID"
             echo "KEYWORDS=$KEYWORDS"
             echo "AUTO_REPLY_ENABLED=${AUTO_REPLY_ENABLED:-false}"

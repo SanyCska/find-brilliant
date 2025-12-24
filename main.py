@@ -58,7 +58,7 @@ class TelegramMarketplaceBot:
         logger.info("🚀 Starting Telegram Marketplace Monitor...")
         
         # Connect and ensure we're authorized
-        await self.client.start()
+        await self.client.start(phone=Config.PHONE_NUMBER)
         
         me = await self.client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} ({me.username or 'no username'})")
