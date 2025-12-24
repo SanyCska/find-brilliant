@@ -36,29 +36,35 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
           
+          # Create .env content
+          cat > /tmp/.env << EOF
+API_ID=$API_ID
+API_HASH=$API_HASH
+TARGET_USER_ID=$TARGET_USER_ID
+KEYWORDS=$KEYWORDS
+AUTO_REPLY_ENABLED=${AUTO_REPLY_ENABLED:-false}
+AUTO_REPLY_TEXT=$AUTO_REPLY_TEXT
+AUTO_REPLY_MIN_DELAY=${AUTO_REPLY_MIN_DELAY:-5}
+AUTO_REPLY_MAX_DELAY=${AUTO_REPLY_MAX_DELAY:-15}
+SESSION_NAME=userbot_session
+EOF
+          
+          # Copy .env file to server
+          scp -i ~/.ssh/deploy_key /tmp/.env "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/.env"
+          
           # Deploy to server
-          ssh -i ~/.ssh/deploy_key "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+          ssh -i ~/.ssh/deploy_key "${SSH_USER}@${SSH_HOST}" bash << ENDSSH
             cd ${DEPLOY_PATH}
             
             # Pull latest code
             git pull origin main
             
-            # Export environment variables
-            export API_ID="${API_ID}"
-            export API_HASH="${API_HASH}"
-            export TARGET_USER_ID="${TARGET_USER_ID}"
-            export KEYWORDS="${KEYWORDS}"
-            export AUTO_REPLY_ENABLED="${AUTO_REPLY_ENABLED:-false}"
-            export AUTO_REPLY_TEXT="${AUTO_REPLY_TEXT}"
-            export AUTO_REPLY_MIN_DELAY="${AUTO_REPLY_MIN_DELAY:-5}"
-            export AUTO_REPLY_MAX_DELAY="${AUTO_REPLY_MAX_DELAY:-15}"
-            
             # Deploy with docker compose
-            docker compose -f docker-compose.ci.yml pull
-            docker compose -f docker-compose.ci.yml up -d --build
+            docker compose pull
+            docker compose up -d --build
             
             # Show status
-            docker compose -f docker-compose.ci.yml ps
+            docker compose ps
             echo "Deployment completed!"
           ENDSSH
       
@@ -70,8 +76,8 @@ jobs:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
           # Check if container is running
-          ssh -i ~/.ssh/deploy_key "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+          ssh -i ~/.ssh/deploy_key "${SSH_USER}@${SSH_HOST}" bash << ENDSSH
             cd ${DEPLOY_PATH}
-            docker compose -f docker-compose.ci.yml ps
-            docker compose -f docker-compose.ci.yml logs --tail=20
+            docker compose ps
+            docker compose logs --tail=20
           ENDSSH
