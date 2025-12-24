@@ -1,16 +1,10 @@
 name: Deploy to Server
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:  # This creates the manual trigger button in GitHub UI
-    inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
 
 jobs:
   deploy:
