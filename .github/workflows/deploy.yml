@@ -1,119 +1,83 @@
-name: Manual Deploy
+name: Deploy to Server
 
 on:
-  # Manual trigger only
-  workflow_dispatch:
+  workflow_dispatch:  # This creates the manual trigger button in GitHub UI
     inputs:
       environment:
-        description: 'Deployment environment'
+        description: 'Environment to deploy to'
         required: true
+        default: 'production'
         type: choice
         options:
-          - staging
           - production
-        default: staging
-      
-      restart_only:
-        description: 'Only restart the service (skip build)'
-        required: false
-        type: boolean
-        default: false
-      
-      ssh_host:
-        description: 'SSH host (leave empty to use secret)'
-        required: false
-        type: string
+          - staging
 
 jobs:
   deploy:
-    name: Deploy to Server
+    name: Deploy Application
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment }}
-    
-    env:
-      API_ID: ${{ secrets.API_ID }}
-      API_HASH: ${{ secrets.API_HASH }}
-      TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
-      KEYWORDS: ${{ secrets.KEYWORDS }}
-      AUTO_REPLY_ENABLED: ${{ secrets.AUTO_REPLY_ENABLED }}
-      AUTO_REPLY_TEXT: ${{ secrets.AUTO_REPLY_TEXT }}
-      AUTO_REPLY_MIN_DELAY: ${{ secrets.AUTO_REPLY_MIN_DELAY }}
-      AUTO_REPLY_MAX_DELAY: ${{ secrets.AUTO_REPLY_MAX_DELAY }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ github.event.inputs.ssh_host || secrets.SSH_HOST }} >> ~/.ssh/known_hosts
-      
       - name: Deploy to server
         env:
-          SSH_HOST: ${{ github.event.inputs.ssh_host || secrets.SSH_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
+          KEYWORDS: ${{ secrets.KEYWORDS }}
+          AUTO_REPLY_ENABLED: ${{ secrets.AUTO_REPLY_ENABLED }}
+          AUTO_REPLY_TEXT: ${{ secrets.AUTO_REPLY_TEXT }}
+          AUTO_REPLY_MIN_DELAY: ${{ secrets.AUTO_REPLY_MIN_DELAY }}
+          AUTO_REPLY_MAX_DELAY: ${{ secrets.AUTO_REPLY_MAX_DELAY }}
         run: |
-          if [[ "${{ github.event.inputs.restart_only }}" == "true" ]]; then
-            echo "🔄 Restarting service only..."
-            ssh ${SSH_USER}@${SSH_HOST} "cd ${DEPLOY_PATH} && docker-compose -f docker-compose.ci.yml restart"
-          else
-            echo "🚀 Deploying to ${SSH_HOST}..."
+          # Setup SSH
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          
+          # Deploy to server
+          ssh -i ~/.ssh/deploy_key "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+            cd ${DEPLOY_PATH}
             
-            # Copy files to server
-            rsync -avz --exclude='.git' --exclude='*.session' --exclude='*.db' --exclude='*.log' --exclude='.env' \
-              ./ ${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/
+            # Pull latest code
+            git pull origin main
             
-            # Create data directory on server
-            ssh ${SSH_USER}@${SSH_HOST} "mkdir -p ${DEPLOY_PATH}/data"
+            # Export environment variables
+            export API_ID="${API_ID}"
+            export API_HASH="${API_HASH}"
+            export TARGET_USER_ID="${TARGET_USER_ID}"
+            export KEYWORDS="${KEYWORDS}"
+            export AUTO_REPLY_ENABLED="${AUTO_REPLY_ENABLED:-false}"
+            export AUTO_REPLY_TEXT="${AUTO_REPLY_TEXT}"
+            export AUTO_REPLY_MIN_DELAY="${AUTO_REPLY_MIN_DELAY:-5}"
+            export AUTO_REPLY_MAX_DELAY="${AUTO_REPLY_MAX_DELAY:-15}"
             
-            # Deploy on server with environment variables from secrets
-            ssh ${SSH_USER}@${SSH_HOST} << ENDSSH
-              cd ${DEPLOY_PATH}
-              
-              # Pull latest changes (if git is used)
-              if [ -d .git ]; then
-                git pull origin main
-              fi
-              
-              # Export secrets as environment variables
-              export API_ID="${API_ID}"
-              export API_HASH="${API_HASH}"
-              export TARGET_USER_ID="${TARGET_USER_ID}"
-              export KEYWORDS="${KEYWORDS}"
-              export AUTO_REPLY_ENABLED="${AUTO_REPLY_ENABLED}"
-              export AUTO_REPLY_TEXT="${AUTO_REPLY_TEXT}"
-              export AUTO_REPLY_MIN_DELAY="${AUTO_REPLY_MIN_DELAY}"
-              export AUTO_REPLY_MAX_DELAY="${AUTO_REPLY_MAX_DELAY}"
-              
-              # Build and restart using CI docker-compose
-              docker-compose -f docker-compose.ci.yml pull
-              docker-compose -f docker-compose.ci.yml up -d --build
-              
-              # Show status
-              docker-compose -f docker-compose.ci.yml ps
-              docker-compose -f docker-compose.ci.yml logs --tail=50
+            # Deploy with docker compose
+            docker compose -f docker-compose.ci.yml pull
+            docker compose -f docker-compose.ci.yml up -d --build
+            
+            # Show status
+            docker compose -f docker-compose.ci.yml ps
+            echo "Deployment completed!"
           ENDSSH
-          fi
       
-      - name: Health check
+      - name: Verify deployment
         env:
-          SSH_HOST: ${{ github.event.inputs.ssh_host || secrets.SSH_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          echo "🏥 Performing health check..."
-          ssh ${SSH_USER}@${SSH_HOST} "cd ${DEPLOY_PATH} && docker-compose -f docker-compose.ci.yml ps && docker inspect telegram-marketplace-monitor --format='{{.State.Health.Status}}' || echo 'No health check available'"
-      
-      - name: Deployment summary
-        run: |
-          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Environment: **${{ github.event.inputs.environment }}**" >> $GITHUB_STEP_SUMMARY
-          echo "- Host: ${{ github.event.inputs.ssh_host || secrets.SSH_HOST }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Restart only: ${{ github.event.inputs.restart_only }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Status: ✅ Deployed successfully" >> $GITHUB_STEP_SUMMARY
-
+          # Check if container is running
+          ssh -i ~/.ssh/deploy_key "${SSH_USER}@${SSH_HOST}" << 'ENDSSH'
+            cd ${DEPLOY_PATH}
+            docker compose -f docker-compose.ci.yml ps
+            docker compose -f docker-compose.ci.yml logs --tail=20
+          ENDSSH
