@@ -45,7 +45,7 @@ class Config:
     # TODO: Move to environment variable if needed
     CHAT_IDS: List[str] = [
         "@NSbaraholka",
-        # "@test_brilliant",
+        "@test_brilliant",
         "@serbiasell",
         -1001645328052,
         "@serbska_baraholka",

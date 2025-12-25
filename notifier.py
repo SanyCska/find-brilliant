@@ -36,9 +36,13 @@ class MessageNotifier:
             True if forwarding succeeded, False otherwise
         """
         try:
+            # Ensure the target entity is resolved and cached
+            # This fixes the "Could not find the input entity" error
+            target_entity = await self.client.get_entity(self.target_user_id)
+            
             # Forward the message preserving all original data
             await self.client.forward_messages(
-                entity=self.target_user_id,
+                entity=target_entity,
                 messages=message.id,
                 from_peer=message.peer_id
             )
@@ -53,8 +57,9 @@ class MessageNotifier:
             await asyncio.sleep(e.seconds)
             # Retry once after waiting
             try:
+                target_entity = await self.client.get_entity(self.target_user_id)
                 await self.client.forward_messages(
-                    entity=self.target_user_id,
+                    entity=target_entity,
                     messages=message.id,
                     from_peer=message.peer_id
                 )
