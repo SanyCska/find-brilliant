@@ -67,15 +67,14 @@ class MessageNotifier:
     
     async def forward_message(self, message: Message) -> bool:
         """
-        Forward a message to the target user.
-        If the message is part of a media group (album), forwards all photos/videos in the group.
-        Also sends a message with the source chat name and link.
+        Send notification about a message with source chat name and clickable link.
+        Does not forward the actual message, only sends the link to it.
         
         Args:
-            message: Telegram message to forward
+            message: Telegram message to notify about
             
         Returns:
-            True if forwarding succeeded, False otherwise
+            True if notification succeeded, False otherwise
         """
         try:
             # Ensure the target entity is resolved and cached
@@ -85,51 +84,16 @@ class MessageNotifier:
             # Get chat name and message link
             chat_name, message_link = await self._get_message_link(message)
             
-            # Send source information first
+            # Send only the source information with link
             source_text = f"📍 **Source:** {chat_name}\n🔗 **Link:** {message_link}"
             await self.client.send_message(
                 entity=target_entity,
                 message=source_text
             )
             
-            # Check if this message is part of a grouped media (album)
-            message_ids = [message.id]
-            if message.grouped_id:
-                logger.info(f"📸 Message is part of media group (grouped_id: {message.grouped_id})")
-                # Get all messages in the same group
-                # Fetch messages around this one to find all in the group
-                messages = await self.client.get_messages(
-                    message.peer_id,
-                    limit=10,
-                    min_id=message.id - 10,
-                    max_id=message.id + 10
-                )
-                
-                # Filter messages with the same grouped_id
-                grouped_messages = [
-                    msg for msg in messages 
-                    if msg.grouped_id == message.grouped_id
-                ]
-                
-                if grouped_messages:
-                    message_ids = [msg.id for msg in sorted(grouped_messages, key=lambda m: m.id)]
-                    logger.info(f"📸 Found {len(message_ids)} messages in media group: {message_ids}")
-            
-            # Forward the message(s) preserving all original data
-            await self.client.forward_messages(
-                entity=target_entity,
-                messages=message_ids,
-                from_peer=message.peer_id
+            logger.info(
+                f"✅ Sent notification with link for message {message.id} from chat {message.chat_id} to user {self.target_user_id}"
             )
-            
-            if len(message_ids) > 1:
-                logger.info(
-                    f"✅ Forwarded {len(message_ids)} messages (media group) from chat {message.chat_id} to user {self.target_user_id}"
-                )
-            else:
-                logger.info(
-                    f"✅ Forwarded message {message.id} from chat {message.chat_id} to user {self.target_user_id}"
-                )
             return True
             
         except FloodWaitError as e:
@@ -142,38 +106,17 @@ class MessageNotifier:
                 # Get chat name and message link
                 chat_name, message_link = await self._get_message_link(message)
                 
-                # Send source information first
+                # Send only the source information with link
                 source_text = f"📍 **Source:** {chat_name}\n🔗 **Link:** {message_link}"
                 await self.client.send_message(
                     entity=target_entity,
                     message=source_text
                 )
                 
-                # Re-determine message_ids in case of grouped media
-                message_ids = [message.id]
-                if message.grouped_id:
-                    messages = await self.client.get_messages(
-                        message.peer_id,
-                        limit=10,
-                        min_id=message.id - 10,
-                        max_id=message.id + 10
-                    )
-                    grouped_messages = [
-                        msg for msg in messages 
-                        if msg.grouped_id == message.grouped_id
-                    ]
-                    if grouped_messages:
-                        message_ids = [msg.id for msg in sorted(grouped_messages, key=lambda m: m.id)]
-                
-                await self.client.forward_messages(
-                    entity=target_entity,
-                    messages=message_ids,
-                    from_peer=message.peer_id
-                )
-                logger.info(f"✅ Forwarded message(s) after FloodWait")
+                logger.info(f"✅ Sent notification after FloodWait")
                 return True
             except Exception as retry_error:
-                logger.error(f"❌ Failed to forward after FloodWait: {retry_error}")
+                logger.error(f"❌ Failed to send notification after FloodWait: {retry_error}")
                 return False
         
         except UserIsBlockedError:
