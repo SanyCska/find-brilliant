@@ -254,23 +254,33 @@ class BotNotifier:
             # Get message information
             msg_info = await self._get_message_info(message, client)
             
-            # Build notification message
-            notification_text = f"🔔 **New Match Found!**\n\n"
-            notification_text += f"📍 **Chat:** {msg_info['chat_name']}\n"
-            notification_text += f"👤 **Sender:** {msg_info['sender_name']}\n"
-            notification_text += f"🔑 **Keywords:** {', '.join(matched_keywords)}\n\n"
+            # Escape HTML special characters in user-generated content
+            def escape_html(text: str) -> str:
+                """Escape HTML special characters."""
+                return (text
+                    .replace('&', '&amp;')
+                    .replace('<', '&lt;')
+                    .replace('>', '&gt;')
+                    .replace('"', '&quot;')
+                    .replace("'", '&#39;'))
+            
+            # Build notification message using HTML parse mode
+            notification_text = "🔔 <b>New Match Found!</b>\n\n"
+            notification_text += f"📍 <b>Chat:</b> {escape_html(msg_info['chat_name'])}\n"
+            notification_text += f"👤 <b>Sender:</b> {escape_html(msg_info['sender_name'])}\n"
+            notification_text += f"🔑 <b>Keywords:</b> {escape_html(', '.join(matched_keywords))}\n\n"
             
             if msg_info['media_info']:
-                notification_text += f"📎 **Media:** {', '.join(msg_info['media_info'])}\n\n"
+                notification_text += f"📎 <b>Media:</b> {escape_html(', '.join(msg_info['media_info']))}\n\n"
             
-            notification_text += f"💬 **Message:**\n{msg_info['text_preview']}\n\n"
-            notification_text += f"🔗 **Link:** {msg_info['message_link']}"
+            notification_text += f"💬 <b>Message:</b>\n{escape_html(msg_info['text_preview'])}\n\n"
+            notification_text += f"🔗 <b>Link:</b> {msg_info['message_link']}"
             
-            # Send via bot
+            # Send via bot using HTML parse mode
             await self.bot.send_message(
                 chat_id=self.target_user_id,
                 text=notification_text,
-                parse_mode='Markdown'
+                parse_mode='HTML'
             )
             
             logger.info(f"✅ Bot notification sent successfully to user {self.target_user_id}")
