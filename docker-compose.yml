@@ -11,9 +11,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
     # Port mapping for localhost access only (for database management tools)
-    # Change 5433 to any available port on your system
+    # Uses DB_EXTERNAL_PORT for host access (defaults to 5433 to avoid conflict)
     ports:
-      - "127.0.0.1:${DB_PORT:-5433}:5432"
+      - "127.0.0.1:${DB_EXTERNAL_PORT:-5433}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s

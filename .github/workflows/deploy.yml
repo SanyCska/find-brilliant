@@ -36,10 +36,11 @@ jobs:
             SESSION_NAME=${{ secrets.SESSION_NAME || 'data/userbot_session' }}
             POLL_INTERVAL=${{ secrets.POLL_INTERVAL || '30' }}
             DB_HOST=${{ secrets.DB_HOST || 'postgres' }}
+            DB_PORT=5432
             DB_NAME=${{ secrets.DB_NAME || 'find_brilliant' }}
             DB_USER=${{ secrets.DB_USER || 'postgres' }}
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            DB_PORT=${{ secrets.DB_PORT || '5433' }}
+            DB_EXTERNAL_PORT=${{ secrets.DB_EXTERNAL_PORT || '5433' }}
             EOF
             
             echo "✅ Code updated successfully"
