@@ -12,7 +12,7 @@ from telethon.tl.types import Message
 from config import Config
 from storage import MessageStorage
 from filters import KeywordFilter
-from notifier import MessageNotifier
+from notifier import BotNotifier
 
 # Configure logging
 import os
@@ -48,7 +48,7 @@ class TelegramMarketplaceBot:
         
         self.storage = MessageStorage('data/processed_messages.db')
         self.keyword_filter = KeywordFilter(Config.KEYWORDS)
-        self.notifier = MessageNotifier(self.client, Config.TARGET_USER_ID)
+        self.notifier = BotNotifier(Config.TG_BOT_KEY, Config.TARGET_USER_ID)
         
         # Track ongoing auto-reply tasks to prevent duplicates
         self._reply_tasks = set()
@@ -190,7 +190,7 @@ class TelegramMarketplaceBot:
             logger.info("=" * 80)
             
             # Forward the message to target user
-            success = await self.notifier.send_notification(message, matched_keywords)
+            success = await self.notifier.send_notification(message, matched_keywords, self.client)
             
             if success:
                 logger.info("✅ Message forwarded successfully")

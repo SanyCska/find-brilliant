@@ -16,6 +16,7 @@ services:
       - API_ID=${API_ID}
       - API_HASH=${API_HASH}
       - TARGET_USER_ID=${TARGET_USER_ID}
+      - TG_BOT_KEY=${TG_BOT_KEY}
       - KEYWORDS=${KEYWORDS}
       - AUTO_REPLY_ENABLED=${AUTO_REPLY_ENABLED:-false}
       - AUTO_REPLY_TEXT=${AUTO_REPLY_TEXT:-Interested!}
@@ -45,5 +46,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
-
-

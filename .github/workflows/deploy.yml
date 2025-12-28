@@ -25,6 +25,7 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
           TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
+          TG_BOT_KEY: ${{ secrets.TG_BOT_KEY }}
           KEYWORDS: ${{ secrets.KEYWORDS }}
           AUTO_REPLY_ENABLED: ${{ secrets.AUTO_REPLY_ENABLED }}
           AUTO_REPLY_TEXT: ${{ secrets.AUTO_REPLY_TEXT }}
@@ -43,6 +44,7 @@ jobs:
             echo "API_HASH=$API_HASH"
             echo "PHONE_NUMBER=$PHONE_NUMBER"
             echo "TARGET_USER_ID=$TARGET_USER_ID"
+            echo "TG_BOT_KEY=$TG_BOT_KEY"
             echo "KEYWORDS=$KEYWORDS"
             echo "AUTO_REPLY_ENABLED=${AUTO_REPLY_ENABLED:-false}"
             echo "AUTO_REPLY_TEXT=$AUTO_REPLY_TEXT"

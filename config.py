@@ -21,6 +21,9 @@ class Config:
     # Target user to forward messages to
     TARGET_USER_ID: int = int(os.getenv("TARGET_USER_ID", "0"))
     
+    # Bot token for sending notifications
+    TG_BOT_KEY: str = os.getenv("TG_BOT_KEY", "")
+    
     # Keywords to filter messages (comma-separated)
     KEYWORDS: List[str] = [
         kw.strip().lower() 
@@ -68,6 +71,9 @@ class Config:
         
         if not cls.TARGET_USER_ID or cls.TARGET_USER_ID == 0:
             errors.append("TARGET_USER_ID is required")
+        
+        if not cls.TG_BOT_KEY:
+            errors.append("TG_BOT_KEY is required")
         
         if not cls.KEYWORDS:
             errors.append("KEYWORDS is required (comma-separated list)")

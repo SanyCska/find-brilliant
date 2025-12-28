@@ -22,5 +22,3 @@ VOLUME ["/app/data"]
 
 # Run the userbot
 CMD ["python", "main.py"]
-
-

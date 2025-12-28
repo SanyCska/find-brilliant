@@ -7,6 +7,8 @@ from telethon import TelegramClient
 from telethon.tl.types import Message
 from telethon.errors import FloodWaitError, UserIsBlockedError, ChatWriteForbiddenError
 import asyncio
+from telegram import Bot
+from telegram.error import TelegramError
 
 logger = logging.getLogger(__name__)
 
@@ -147,5 +149,139 @@ class MessageNotifier:
         logger.info(f"🔑 Matched keywords: {', '.join(matched_keywords)}")
         
         return await self.forward_message(message)
+
+
+class BotNotifier:
+    """Handles sending notifications via Telegram Bot API."""
+    
+    def __init__(self, bot_token: str, target_user_id: int):
+        """
+        Initialize the bot notifier.
+        
+        Args:
+            bot_token: Telegram bot token
+            target_user_id: Telegram user ID to send messages to
+        """
+        self.bot = Bot(token=bot_token)
+        self.target_user_id = target_user_id
+    
+    async def _get_message_info(self, message: Message, client: TelegramClient) -> dict:
+        """
+        Extract message information for notification.
+        
+        Args:
+            message: Telegram message
+            client: Telethon client to get additional info
+            
+        Returns:
+            Dictionary with message details
+        """
+        try:
+            # Get chat information
+            chat = await message.get_chat()
+            chat_name = getattr(chat, 'title', None) or getattr(chat, 'first_name', None) or f"Chat {message.chat_id}"
+            
+            # Get sender information
+            sender_name = "Unknown"
+            if message.sender:
+                sender_name = getattr(message.sender, 'first_name', None) or getattr(message.sender, 'username', None) or str(message.sender_id)
+            
+            # Try to construct a link to the message
+            message_link = None
+            username = getattr(chat, 'username', None)
+            if username:
+                # Public group/channel
+                message_link = f"https://t.me/{username}/{message.id}"
+            else:
+                # Private group - use the chat ID format
+                chat_id_str = str(message.chat_id)
+                if chat_id_str.startswith('-100'):
+                    chat_id_numeric = chat_id_str[4:]  # Remove -100 prefix
+                    message_link = f"https://t.me/c/{chat_id_numeric}/{message.id}"
+                else:
+                    message_link = f"Chat ID: {message.chat_id}, Message ID: {message.id}"
+            
+            # Get message text preview
+            text_preview = message.text[:200] if message.text else "(no text)"
+            
+            # Check for media
+            media_info = []
+            if message.photo:
+                media_info.append("📷 Photo")
+            if message.video:
+                media_info.append("🎥 Video")
+            if message.document:
+                media_info.append("📎 File")
+            
+            return {
+                'chat_name': chat_name,
+                'sender_name': sender_name,
+                'message_link': message_link,
+                'text_preview': text_preview,
+                'media_info': media_info,
+                'message_id': message.id,
+                'chat_id': message.chat_id
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting message info: {e}")
+            return {
+                'chat_name': f"Chat {message.chat_id}",
+                'sender_name': "Unknown",
+                'message_link': f"Message ID: {message.id}",
+                'text_preview': message.text[:200] if message.text else "(no text)",
+                'media_info': [],
+                'message_id': message.id,
+                'chat_id': message.chat_id
+            }
+    
+    async def send_notification(self, message: Message, matched_keywords: list, client: TelegramClient) -> bool:
+        """
+        Send a notification about a matched message via bot.
+        
+        Args:
+            message: Telegram message that matched
+            matched_keywords: List of keywords that matched
+            client: Telethon client to get message details
+            
+        Returns:
+            True if notification succeeded, False otherwise
+        """
+        try:
+            logger.info(f"📨 Bot notification triggered for message {message.id}")
+            logger.info(f"🔑 Matched keywords: {', '.join(matched_keywords)}")
+            
+            # Get message information
+            msg_info = await self._get_message_info(message, client)
+            
+            # Build notification message
+            notification_text = f"🔔 **New Match Found!**\n\n"
+            notification_text += f"📍 **Chat:** {msg_info['chat_name']}\n"
+            notification_text += f"👤 **Sender:** {msg_info['sender_name']}\n"
+            notification_text += f"🔑 **Keywords:** {', '.join(matched_keywords)}\n\n"
+            
+            if msg_info['media_info']:
+                notification_text += f"📎 **Media:** {', '.join(msg_info['media_info'])}\n\n"
+            
+            notification_text += f"💬 **Message:**\n{msg_info['text_preview']}\n\n"
+            notification_text += f"🔗 **Link:** {msg_info['message_link']}"
+            
+            # Send via bot
+            await self.bot.send_message(
+                chat_id=self.target_user_id,
+                text=notification_text,
+                parse_mode='Markdown'
+            )
+            
+            logger.info(f"✅ Bot notification sent successfully to user {self.target_user_id}")
+            return True
+            
+        except TelegramError as e:
+            logger.error(f"❌ Telegram error sending bot notification: {e}")
+            return False
+        
+        except Exception as e:
+            logger.error(f"❌ Error sending bot notification: {e}")
+            return False
 
 

@@ -68,5 +68,3 @@ class KeywordFilter:
             keywords: New list of keywords
         """
         self.keywords = [kw.lower() for kw in keywords]
-
-
