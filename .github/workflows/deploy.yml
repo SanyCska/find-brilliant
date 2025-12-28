@@ -10,62 +10,55 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     
-    env:
-      API_ID: ${{ secrets.API_ID }}
-      API_HASH: ${{ secrets.API_HASH }}
-      PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
-      TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
-      TG_BOT_KEY: ${{ secrets.TG_BOT_KEY }}
-      KEYWORDS: ${{ secrets.KEYWORDS }}
-      SESSION_NAME: ${{ secrets.SESSION_NAME || 'data/userbot_session' }}
-      POLL_INTERVAL: ${{ secrets.POLL_INTERVAL || '30' }}
-      DB_HOST: ${{ secrets.DB_HOST || 'postgres' }}
-      DB_NAME: ${{ secrets.DB_NAME || 'find_brilliant' }}
-      DB_USER: ${{ secrets.DB_USER || 'postgres' }}
-      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      DB_PORT: ${{ secrets.DB_PORT || '5432' }}
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Create data directory
-        run: mkdir -p data
-      
-      - name: Create .env file placeholder (to avoid warnings)
-        run: |
-          touch .env
-          echo "# CI/CD - Variables come from GitHub Secrets" > .env
-      
-      - name: Start PostgreSQL container
-        run: |
-          docker compose up -d postgres
-          echo "Waiting for PostgreSQL to be healthy..."
-          timeout 60 bash -c 'until docker compose ps postgres | grep -q "healthy"; do sleep 2; done'
-          echo "PostgreSQL is ready!"
-      
-      - name: Verify PostgreSQL is running
-        run: |
-          docker compose ps
-          docker compose logs postgres
-      
-      - name: Start Telegram Userbot
-        run: docker compose up -d telegram-userbot
-      
-      - name: Check service status
-        run: |
-          docker compose ps
-          docker compose logs --tail=50 telegram-userbot
-      
-      - name: Health check
-        run: |
-          sleep 10
-          docker compose ps
-          if docker compose ps | grep -q "unhealthy"; then
-            echo "Service is unhealthy"
-            docker compose logs
-            exit 1
-          fi
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            # Navigate to project directory
+            cd ${{ secrets.DEPLOY_PATH || '~/find-brilliant' }}
+            
+            # Pull latest changes
+            git pull origin main
+            
+            # Create .env if it doesn't exist
+            if [ ! -f .env ]; then
+              echo "Creating .env file..."
+              cat > .env << EOF
+            API_ID=${{ secrets.API_ID }}
+            API_HASH=${{ secrets.API_HASH }}
+            PHONE_NUMBER=${{ secrets.PHONE_NUMBER }}
+            TARGET_USER_ID=${{ secrets.TARGET_USER_ID }}
+            TG_BOT_KEY=${{ secrets.TG_BOT_KEY }}
+            KEYWORDS=${{ secrets.KEYWORDS }}
+            SESSION_NAME=${{ secrets.SESSION_NAME || 'data/userbot_session' }}
+            POLL_INTERVAL=${{ secrets.POLL_INTERVAL || '30' }}
+            DB_HOST=${{ secrets.DB_HOST || 'postgres' }}
+            DB_NAME=${{ secrets.DB_NAME || 'find_brilliant' }}
+            DB_USER=${{ secrets.DB_USER || 'postgres' }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            DB_PORT=${{ secrets.DB_PORT || '5433' }}
+            EOF
+            fi
+            
+            # Stop old containers
+            docker-compose down
+            
+            # Build and start new containers
+            docker-compose up -d --build
+            
+            # Wait for services to be healthy
+            echo "Waiting for services to start..."
+            sleep 15
+            
+            # Show status
+            docker-compose ps
+            
+            # Show recent logs
+            docker-compose logs --tail=50
