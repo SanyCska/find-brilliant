@@ -179,14 +179,18 @@ class BotCommandHandler:
                 # Get entity info using Telethon
                 entity = await self.telethon_client.get_entity(username)
                 
+                # Get the peer ID (this gives us the correct format with -100 prefix for supergroups)
+                from telethon import utils
+                peer_id = utils.get_peer_id(entity)
+                
                 # Extract group info
                 group_info = {
-                    'telegram_group_id': entity.id,
+                    'telegram_group_id': peer_id,  # Use peer_id instead of entity.id
                     'username': username.lstrip('@'),
                     'title': getattr(entity, 'title', None) or username
                 }
                 groups_info.append(group_info)
-                logger.info(f"✅ Fetched info for {username}: {group_info}")
+                logger.info(f"✅ Fetched info for {username}: ID={peer_id}, Title={group_info['title']}")
                 
             except UsernameInvalidError:
                 failed_groups.append(f"{username} (invalid username)")

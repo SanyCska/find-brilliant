@@ -5,13 +5,15 @@ A production-ready Python userbot that monitors Telegram marketplace chats and f
 ## ✨ Features
 
 - 🔍 **Keyword Filtering** - Case-insensitive keyword matching
-- 📨 **Message Forwarding** - Forwards original messages (preserves media, author, etc.)
+- 📨 **Targeted Notifications** - Each user receives notifications for their own search requests
 - 🔒 **Duplicate Protection** - Never processes the same message twice (SQLite storage)
 - 🛡️ **Rate-Limit Safety** - Handles FloodWaitError gracefully
 - ⚡ **Real-time Only** - Monitors ONLY new messages (no history scanning)
 - 📊 **Logging** - Comprehensive logging to file and console
 - 🗄️ **PostgreSQL Database** - Store search requests, keywords, and groups per user
 - 🤖 **Bot Commands** - Manage searches via Telegram bot interface (`/search`, `/list`)
+- 🔄 **Dynamic Monitoring** - Automatically updates monitored groups and keywords from database
+- 👥 **Multi-User Support** - Multiple users can create independent search requests
 
 ## 🚀 Quick Start
 
@@ -27,13 +29,14 @@ See [DOCKER.md](DOCKER.md) for detailed Docker setup instructions.
 cp env.example .env
 nano .env  # Add your credentials (including DB_PASSWORD)
 
-# 2. Update config.py with your chat IDs
-
-# 3. Start the bot (PostgreSQL + Userbot)
+# 2. Start the bot (PostgreSQL + Userbot)
 docker-compose up -d
 
-# 4. View logs
+# 3. View logs
 docker-compose logs -f
+
+# 4. Create your first search request via Telegram
+#    Send /start to your bot, then use /search
 
 # 5. Test database connection (optional)
 docker-compose exec telegram-userbot python db_utils.py test
@@ -94,8 +97,7 @@ nano .env
 ```bash
 API_ID=12345678                    # Your Telegram API ID
 API_HASH=your_api_hash_here        # Your Telegram API hash
-TARGET_USER_ID=123456789           # Your Telegram user ID (get from @userinfobot)
-KEYWORDS=laptop,macbook,iphone     # Comma-separated keywords
+TG_BOT_KEY=your_bot_token          # Your Telegram bot token (from @BotFather)
 
 # Database configuration
 DB_HOST=localhost                  # postgres (for Docker), localhost (for external tools)
@@ -105,40 +107,9 @@ DB_USER=postgres                   # Database user
 DB_PASSWORD=your_secure_password   # Database password (REQUIRED)
 ```
 
-#### 5. Configure Monitored Chats
+**Note:** `TARGET_USER_ID`, `KEYWORDS`, and `CHAT_IDS` are no longer needed in configuration. These are now managed via the bot interface (`/search` command).
 
-Edit `config.py` and update the `CHAT_IDS` list:
-
-```python
-CHAT_IDS: List[str] = [
-    "@marketplace_channel",     # Public channel username
-    -1001234567890,            # Numeric chat ID
-    # Add more chats here
-]
-```
-
-**How to get chat IDs:**
-
-**Method 1 - Use the helper script (RECOMMENDED):**
-```bash
-python get_chat_ids.py
-```
-This will list all your chats with their IDs!
-
-**Method 2 - For public channels:**
-- Use `@username` format (e.g., `"@serbska_baraholka"`)
-
-**Method 3 - For private groups:**
-- Open chat in Telegram Desktop → Right-click → Copy link
-- You'll get: `https://t.me/c/1234567890/123`
-- Add `-100` prefix to the number: `-1001234567890`
-- Use this in `CHAT_IDS`
-
-**Method 4 - Using @userinfobot:**
-- Forward a message from the chat to [@userinfobot](https://t.me/userinfobot)
-- It will reply with the chat ID
-
-#### 6. Run the Userbot
+#### 5. Run the Userbot
 
 ```bash
 python main.py
@@ -150,14 +121,17 @@ python main.py
 - Enter the code and your 2FA password (if enabled)
 - Session will be saved for future runs
 
-#### 7. Use the Bot Interface
+#### 6. Use the Bot Interface
 
 Once the bot is running, you can manage search requests via Telegram:
 
 ```
-1. Open Telegram and find your bot
+1. Open Telegram and find your bot (the one with TG_BOT_KEY token)
 2. Send /start to begin
 3. Use /search to create a new search request
+   - Enter keywords (comma-separated)
+   - Enter group usernames (with @ prefix)
+   - Bot will verify groups and activate monitoring
 4. Use /list to view your active searches
 ```
 
@@ -166,6 +140,13 @@ Once the bot is running, you can manage search requests via Telegram:
 - `/search` - Create a new search request (interactive)
 - `/list` - View all your active searches
 - `/help` - Show available commands
+
+**How to add groups to monitor:**
+
+When using `/search`, provide group usernames with @ prefix:
+- For public channels: `@marketplace_channel`, `@deals_group`
+- Make sure you (the userbot account) are a member of these groups
+- The bot will verify access and fetch group information automatically
 
 ## 🤖 Bot Commands
 
@@ -224,8 +205,9 @@ Bot: 📋 Your Active Searches (2):
 project/
 ├── main.py                    # Entry point and event orchestration
 ├── config.py                  # Configuration management
-├── filters.py                 # Keyword filtering logic
-├── notifier.py                # Message forwarding logic
+├── monitoring_manager.py      # Dynamic monitoring system (groups/keywords from DB)
+├── filters.py                 # Keyword filtering logic (legacy)
+├── notifier.py                # Message notification logic
 ├── bot_handler.py             # Bot command handlers (/search, /list)
 ├── storage.py                 # Duplicate detection storage
 ├── database.py                # PostgreSQL database module
@@ -260,18 +242,23 @@ project/
 |----------|----------|---------|-------------|
 | `API_ID` | ✅ | - | Telegram API ID |
 | `API_HASH` | ✅ | - | Telegram API hash |
-| `TARGET_USER_ID` | ✅ | - | User ID to forward messages to |
-| `KEYWORDS` | ✅ | - | Comma-separated keywords |
-| `SESSION_NAME` | ❌ | userbot_session | Session file name |
-| `DB_HOST` | ✅ | localhost | PostgreSQL host |
-| `DB_PORT` | ❌ | 5433 | PostgreSQL port (external, localhost only) |
+| `PHONE_NUMBER` | ✅ | - | Telegram phone number |
+| `TG_BOT_KEY` | ✅ | - | Telegram bot token (from @BotFather) |
+| `SESSION_NAME` | ❌ | data/userbot_session | Session file name |
+| `POLL_INTERVAL` | ❌ | 30 | Polling interval for large groups (seconds) |
+| `DB_HOST` | ✅ | postgres | PostgreSQL host |
+| `DB_PORT` | ❌ | 5432 | PostgreSQL port |
 | `DB_NAME` | ❌ | find_brilliant | Database name |
 | `DB_USER` | ❌ | postgres | Database user |
 | `DB_PASSWORD` | ✅ | - | Database password |
 
-### Hardcoded Settings (config.py)
+### Deprecated Variables (Now from Database)
 
-- `CHAT_IDS`: List of chats to monitor
+These are no longer required in configuration and are managed via the bot interface:
+
+- `TARGET_USER_ID` - Each user receives their own notifications
+- `KEYWORDS` - Configured per search request via `/search`
+- `CHAT_IDS` - Groups are added per search request via `/search`
 
 ## 🔒 Security Best Practices
 
@@ -294,27 +281,26 @@ project/
 
 ### Example 1: Monitor marketplace for electronics
 
-```bash
-# .env
-KEYWORDS=laptop,macbook,iphone,ipad,airpods,gaming pc
-TARGET_USER_ID=123456789
+```
+1. Start the bot
+2. Send /search to your Telegram bot
+3. Enter keywords: laptop,macbook,iphone,ipad,airpods
+4. Enter groups: @electronics_marketplace, @tech_deals_channel
+5. Bot confirms setup and starts monitoring
+6. You'll receive notifications when matches are found
 ```
 
-```python
-# config.py
-CHAT_IDS = [
-    "@electronics_marketplace",
-    "@tech_deals_channel",
-]
-```
+### Example 2: Multiple users with different interests
 
-### Example 2: Monitor multiple marketplaces
+**User A:**
+- Keywords: bicycle, bike, mtb, road bike
+- Groups: @bikes_marketplace, @cycling_deals
 
-```bash
-# .env
-KEYWORDS=bicycle,bike,mtb,road bike
-TARGET_USER_ID=123456789
-```
+**User B:**
+- Keywords: iphone, samsung, smartphone
+- Groups: @phones_marketplace, @tech_deals
+
+Both users receive only notifications for their own keywords!
 
 ## 🗄️ Database Management
 
@@ -425,21 +411,23 @@ docker-compose up -d
 
 ### "Configuration validation failed"
 - Check that all required variables are set in `.env`
-- Ensure `CHAT_IDS` is configured in `config.py`
+- Required: `API_ID`, `API_HASH`, `PHONE_NUMBER`, `TG_BOT_KEY`, `DB_PASSWORD`
+
+### "No groups to monitor"
+- No active search requests in database yet
+- Use `/search` command in your bot to create a search request
+- Check database with: `python db_utils.py list`
 
 ### "FloodWaitError"
 - Telegram is rate-limiting your account
 - The bot will automatically wait and retry
 - Reduce the frequency of actions if this persists
 
-### "UserIsBlockedError"
-- The target user has blocked your account
-- Update `TARGET_USER_ID` to a different user
-
-### Messages not being forwarded
-- Check that your account is a member of the monitored chats
+### Messages not being delivered
+- Check that your userbot account is a member of the monitored groups
 - Verify keywords are correct (case-insensitive)
 - Check `userbot.log` for errors
+- Make sure the search request is active: use `/list` to verify
 
 ### Session errors
 - Delete the `.session` file and re-authenticate

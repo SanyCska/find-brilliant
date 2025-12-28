@@ -5,6 +5,7 @@ Monitors Telegram chats for keyword matches and forwards messages to a target us
 import logging
 import asyncio
 import random
+from typing import List, Set
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError
 from telethon.tl.types import Message
@@ -14,6 +15,8 @@ from storage import MessageStorage
 from filters import KeywordFilter
 from notifier import BotNotifier
 from bot_handler import BotCommandHandler
+from monitoring_manager import MonitoringManager
+from database import get_database_from_env
 
 # Configure logging
 import os
@@ -48,8 +51,15 @@ class TelegramMarketplaceBot:
         )
         
         self.storage = MessageStorage('data/processed_messages.db')
-        self.keyword_filter = KeywordFilter(Config.KEYWORDS)
-        self.notifier = BotNotifier(Config.TG_BOT_KEY, Config.TARGET_USER_ID)
+        
+        # Initialize database and monitoring manager
+        self.db = get_database_from_env()
+        self.monitoring_manager = MonitoringManager(self.db)
+        
+        # Keep legacy filter and notifier for backward compatibility (optional)
+        # These will be replaced by monitoring_manager functionality
+        self.keyword_filter = KeywordFilter(Config.KEYWORDS if hasattr(Config, 'KEYWORDS') else [])
+        self.notifier = BotNotifier(Config.TG_BOT_KEY, Config.TARGET_USER_ID if hasattr(Config, 'TARGET_USER_ID') else 0)
         
         # Bot command handler for managing search requests
         self.bot_handler = None
@@ -63,37 +73,34 @@ class TelegramMarketplaceBot:
         
         me = await self.client.get_me()
         logger.info(f"✅ Logged in as: {me.first_name} ({me.username or 'no username'})")
-        logger.info(f"📊 Monitoring {len(Config.CHAT_IDS)} chat(s):")
-        for chat_id in Config.CHAT_IDS:
-            logger.info(f"   - {chat_id}")
-        logger.info(f"🔍 Filtering for {len(Config.KEYWORDS)} keywords:")
-        for keyword in Config.KEYWORDS:
-            logger.info(f"   - '{keyword}'")
         
-        # Show last message from each monitored chat to verify connectivity
-        logger.info("")
-        logger.info("=" * 80)
-        logger.info("📋 Checking last message from each monitored chat...")
-        logger.info("=" * 80)
-        await self._check_last_messages()
+        # Load monitoring data from database
+        logger.info("📊 Loading monitoring configuration from database...")
+        self.monitoring_manager.load_monitoring_data()
         
-        # Get numeric IDs for monitored chats
-        monitored_chat_ids = set()
-        for chat_id in Config.CHAT_IDS:
-            try:
-                entity = await self.client.get_entity(chat_id)
-                # Get the actual numeric ID
-                numeric_id = entity.id
-                monitored_chat_ids.add(numeric_id)
-                logger.info(f"   Resolved '{chat_id}' -> ID: {numeric_id}")
-            except Exception as e:
-                logger.error(f"   ❌ Failed to resolve '{chat_id}': {e}")
+        # Display monitoring stats
+        stats = self.monitoring_manager.get_stats()
+        logger.info(f"📊 Monitoring Configuration:")
+        logger.info(f"   Active search requests: {stats['active_requests']}")
+        logger.info(f"   Unique groups: {stats['monitored_groups']}")
+        logger.info(f"   Total monitors: {stats['total_monitors']}")
+        
+        # Get monitored group IDs from monitoring manager
+        monitored_chat_ids = self.monitoring_manager.get_monitored_groups()
         
         if not monitored_chat_ids:
-            logger.error("❌ No chat IDs could be resolved! Check your CHAT_IDS configuration.")
-            return
-        
-        logger.info(f"   Monitoring numeric IDs: {monitored_chat_ids}")
+            logger.warning("⚠️  No groups to monitor! Waiting for search requests to be created...")
+            logger.info("   Send /search to the bot to create your first search request")
+            # Initialize empty set for now
+            monitored_chat_ids = set()
+        else:
+            # Show last message from each monitored chat to verify connectivity
+            logger.info("")
+            logger.info("=" * 80)
+            logger.info("📋 Checking last message from each monitored chat...")
+            logger.info("=" * 80)
+            await self._check_last_messages_by_ids(monitored_chat_ids)
+            logger.info(f"   Monitoring {len(monitored_chat_ids)} group(s): {monitored_chat_ids}")
         
         # Register event handler for ALL messages, then filter manually
         # This is more reliable than using chats= parameter
@@ -124,6 +131,9 @@ class TelegramMarketplaceBot:
         
         # Start heartbeat task
         asyncio.create_task(self._heartbeat())
+        
+        # Start monitoring refresh task
+        asyncio.create_task(self._refresh_monitoring_data())
         
         # Start polling task for large groups
         asyncio.create_task(self._poll_large_groups(monitored_chat_ids))
@@ -167,22 +177,21 @@ class TelegramMarketplaceBot:
                 logger.debug(f"⏭️  Skipping already processed message {message.id}")
                 return
             
-            # Check if message matches keywords
-            if not self.keyword_filter.matches(message):
-                logger.info(f"   ⏩ No keyword match")
+            # Check if message matches any keywords for this group
+            matches = self.monitoring_manager.check_message(message.chat_id, message.text)
+            
+            if not matches:
+                logger.info(f"   ⏩ No keyword match for any active search request")
                 # Mark as processed even if no match to avoid re-checking
                 self.storage.mark_processed(message.chat_id, message.id)
                 return
             
-            # Get matched keywords for logging
-            matched_keywords = self.keyword_filter.get_matched_keywords(message)
-            
+            # Process each matching search request
             logger.info("=" * 80)
-            logger.info(f"🎯 MATCH FOUND!")
+            logger.info(f"🎯 MATCH FOUND! ({len(matches)} search request(s) matched)")
             logger.info(f"Chat: {chat_name}")
             logger.info(f"Chat ID: {message.chat_id}")
             logger.info(f"Message ID: {message.id}")
-            logger.info(f"Matched keywords: {', '.join(matched_keywords)}")
             logger.info("-" * 80)
             logger.info(f"📝 FULL MESSAGE TEXT:")
             logger.info("-" * 80)
@@ -201,13 +210,24 @@ class TelegramMarketplaceBot:
                 logger.info(f"📎 Contains document")
             logger.info("=" * 80)
             
-            # Forward the message to target user
-            success = await self.notifier.send_notification(message, matched_keywords, self.client)
-            
-            if success:
-                logger.info("✅ Message forwarded successfully")
-            else:
-                logger.error("❌ Failed to forward message")
+            # Send notification to each user whose request matched
+            for user_telegram_id, matched_keywords, request_id in matches:
+                logger.info(f"📤 Sending notification to user {user_telegram_id}")
+                logger.info(f"   Request ID: {request_id}")
+                logger.info(f"   Matched keywords: {', '.join(matched_keywords)}")
+                
+                # Send notification to this specific user
+                success = await self._send_notification_to_user(
+                    message,
+                    matched_keywords,
+                    user_telegram_id,
+                    request_id
+                )
+                
+                if success:
+                    logger.info(f"✅ Notification sent to user {user_telegram_id}")
+                else:
+                    logger.error(f"❌ Failed to send notification to user {user_telegram_id}")
             
             # Mark as processed
             self.storage.mark_processed(message.chat_id, message.id)
@@ -215,9 +235,177 @@ class TelegramMarketplaceBot:
         except Exception as e:
             logger.error(f"❌ Error processing message {message.id}: {e}", exc_info=True)
     
+    async def _send_notification_to_user(
+        self,
+        message: Message,
+        matched_keywords: List[str],
+        user_telegram_id: int,
+        request_id: int
+    ) -> bool:
+        """
+        Send notification to a specific user about a matched message.
+        
+        Args:
+            message: Telegram message that matched
+            matched_keywords: List of keywords that matched
+            user_telegram_id: Telegram ID of the user to notify
+            request_id: ID of the search request that matched
+            
+        Returns:
+            True if notification succeeded, False otherwise
+        """
+        try:
+            # Create a bot instance for this notification
+            from telegram import Bot
+            bot = Bot(token=Config.TG_BOT_KEY)
+            
+            # Get message information
+            chat = await message.get_chat()
+            chat_name = getattr(chat, 'title', None) or getattr(chat, 'username', None) or f"Chat {message.chat_id}"
+            
+            # Get sender information
+            sender_name = "Unknown"
+            if message.sender:
+                sender_name = getattr(message.sender, 'first_name', None) or getattr(message.sender, 'username', None) or str(message.sender_id)
+            
+            # Try to construct a link to the message
+            message_link = None
+            username = getattr(chat, 'username', None)
+            if username:
+                # Public group/channel
+                message_link = f"https://t.me/{username}/{message.id}"
+            else:
+                # Private group - use the chat ID format
+                chat_id_str = str(message.chat_id)
+                if chat_id_str.startswith('-100'):
+                    chat_id_numeric = chat_id_str[4:]  # Remove -100 prefix
+                    message_link = f"https://t.me/c/{chat_id_numeric}/{message.id}"
+                else:
+                    message_link = f"Chat ID: {message.chat_id}, Message ID: {message.id}"
+            
+            # Get message text preview
+            text_preview = message.text[:300] if message.text else "(no text)"
+            
+            # Check for media
+            media_info = []
+            if message.photo:
+                media_info.append("📷 Photo")
+            if message.video:
+                media_info.append("🎥 Video")
+            if message.document:
+                media_info.append("📎 File")
+            
+            # Escape HTML special characters
+            def escape_html(text: str) -> str:
+                return (text
+                    .replace('&', '&amp;')
+                    .replace('<', '&lt;')
+                    .replace('>', '&gt;')
+                    .replace('"', '&quot;')
+                    .replace("'", '&#39;'))
+            
+            # Build notification message
+            notification_text = "🔔 <b>New Match Found!</b>\n\n"
+            notification_text += f"📍 <b>Chat:</b> {escape_html(chat_name)}\n"
+            notification_text += f"👤 <b>Sender:</b> {escape_html(sender_name)}\n"
+            notification_text += f"🔑 <b>Keywords:</b> {escape_html(', '.join(matched_keywords))}\n"
+            notification_text += f"🆔 <b>Request ID:</b> {request_id}\n\n"
+            
+            if media_info:
+                notification_text += f"📎 <b>Media:</b> {escape_html(', '.join(media_info))}\n\n"
+            
+            notification_text += f"💬 <b>Message:</b>\n{escape_html(text_preview)}\n\n"
+            notification_text += f"🔗 <b>Link:</b> {message_link}"
+            
+            # Send via bot
+            await bot.send_message(
+                chat_id=user_telegram_id,
+                text=notification_text,
+                parse_mode='HTML'
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Error sending notification to user {user_telegram_id}: {e}", exc_info=True)
+            return False
+    
+    async def _check_last_messages_by_ids(self, group_ids: Set[int]):
+        """
+        Check and display the last message from each monitored group by ID.
+        
+        Args:
+            group_ids: Set of Telegram group IDs to check
+        """
+        for chat_id in group_ids:
+            try:
+                # Get the chat entity
+                chat = await self.client.get_entity(chat_id)
+                chat_name = getattr(chat, 'title', None) or getattr(chat, 'username', None) or str(chat_id)
+                
+                # Get the last message
+                messages = await self.client.get_messages(chat, limit=1)
+                
+                if not messages:
+                    logger.warning(f"⚠️  Chat '{chat_name}': No messages found or no access")
+                    continue
+                
+                last_msg = messages[0]
+                
+                # Format the date
+                msg_date = last_msg.date.strftime("%Y-%m-%d %H:%M:%S") if last_msg.date else "Unknown"
+                
+                # Get sender info
+                sender_name = "Unknown"
+                if last_msg.sender:
+                    sender_name = getattr(last_msg.sender, 'first_name', None) or getattr(last_msg.sender, 'username', None) or str(last_msg.sender_id)
+                
+                # Get message preview
+                text_preview = ""
+                if last_msg.text:
+                    text_preview = last_msg.text[:100].replace('\n', ' ')
+                    if len(last_msg.text) > 100:
+                        text_preview += "..."
+                else:
+                    text_preview = "(no text)"
+                
+                # Media info
+                media_info = []
+                if last_msg.photo:
+                    media_info.append("📷 photo")
+                if last_msg.video:
+                    media_info.append("🎥 video")
+                if last_msg.document:
+                    media_info.append("📎 document")
+                
+                media_str = f" [{', '.join(media_info)}]" if media_info else ""
+                
+                logger.info("")
+                logger.info(f"💬 Chat: '{chat_name}' (ID: {chat_id})")
+                logger.info(f"   Last message ID: {last_msg.id}")
+                logger.info(f"   Date: {msg_date}")
+                logger.info(f"   From: {sender_name}")
+                logger.info(f"   Text: {text_preview}{media_str}")
+                
+                # Check if it matches any keywords
+                matches = self.monitoring_manager.check_message(chat_id, last_msg.text)
+                if matches:
+                    for user_id, keywords, req_id in matches:
+                        logger.info(f"   🎯 MATCHES Request {req_id}: {', '.join(keywords)}")
+                else:
+                    logger.info(f"   ⏩ No keyword match")
+                    
+            except ValueError as e:
+                logger.error(f"❌ Cannot access chat ID '{chat_id}': {e}")
+            except Exception as e:
+                logger.error(f"❌ Error checking chat ID '{chat_id}': {e}")
+        
+        logger.info("=" * 80)
+        logger.info("")
+    
     async def _check_last_messages(self):
-        """Check and display the last message from each monitored chat."""
-        for chat_id in Config.CHAT_IDS:
+        """Check and display the last message from each monitored chat (legacy method)."""
+        for chat_id in Config.CHAT_IDS if hasattr(Config, 'CHAT_IDS') else []:
             try:
                 # Get the chat entity
                 chat = await self.client.get_entity(chat_id)
@@ -282,10 +470,14 @@ class TelegramMarketplaceBot:
         logger.info("=" * 80)
         logger.info("")
     
-    async def _poll_large_groups(self, monitored_chat_ids: set):
+    async def _poll_large_groups(self, initial_chat_ids: set):
         """
         Poll large groups for new messages since Telegram doesn't push updates for them.
         This is necessary for supergroups with many members (>5000).
+        Dynamically updates the list of monitored groups.
+        
+        Args:
+            initial_chat_ids: Initial set of chat IDs (may be empty)
         """
         # Wait a bit before starting to poll
         await asyncio.sleep(30)
@@ -295,11 +487,18 @@ class TelegramMarketplaceBot:
         
         logger.info("🔄 Starting polling mode for large groups...")
         logger.info(f"   Checking for new messages every {Config.POLL_INTERVAL} seconds")
-        if len(monitored_chat_ids) > 1:
-            logger.info(f"   Using random delays (1-5s) between groups")
+        logger.info(f"   Monitoring list will update dynamically from database")
         
         while True:
             try:
+                # Get current list of monitored groups from monitoring manager
+                monitored_chat_ids = self.monitoring_manager.get_monitored_groups()
+                
+                if not monitored_chat_ids:
+                    # No groups to monitor yet, wait and try again
+                    await asyncio.sleep(Config.POLL_INTERVAL)
+                    continue
+                
                 for i, chat_id in enumerate(monitored_chat_ids):
                     try:
                         # Add random delay between groups (not for the first one in each cycle)
@@ -356,6 +555,32 @@ class TelegramMarketplaceBot:
                 logger.error(f"❌ Error in polling loop: {e}")
                 await asyncio.sleep(Config.POLL_INTERVAL)
     
+    async def _refresh_monitoring_data(self):
+        """
+        Periodically refresh monitoring data from database.
+        Checks for new search requests, keywords, and groups.
+        """
+        # Wait 2 minutes before first refresh
+        await asyncio.sleep(120)
+        
+        while True:
+            try:
+                logger.info("🔄 Refreshing monitoring data from database...")
+                self.monitoring_manager.load_monitoring_data()
+                
+                stats = self.monitoring_manager.get_stats()
+                logger.info(f"✅ Monitoring data refreshed:")
+                logger.info(f"   Active requests: {stats['active_requests']}")
+                logger.info(f"   Monitored groups: {stats['monitored_groups']}")
+                logger.info(f"   Total monitors: {stats['total_monitors']}")
+                
+                # Wait 5 minutes before next refresh
+                await asyncio.sleep(300)
+            except Exception as e:
+                logger.error(f"❌ Error refreshing monitoring data: {e}")
+                # Wait 5 minutes before retry
+                await asyncio.sleep(300)
+    
     async def _heartbeat(self):
         """
         Periodic heartbeat to show the bot is active.
@@ -366,7 +591,12 @@ class TelegramMarketplaceBot:
         while True:
             try:
                 stats = self.storage.get_stats()
-                logger.info(f"💓 Heartbeat: Bot is active | Processed: {stats.get('total_processed', 0)} messages")
+                monitor_stats = self.monitoring_manager.get_stats()
+                logger.info(
+                    f"💓 Heartbeat: Bot is active | "
+                    f"Processed: {stats.get('total_processed', 0)} messages | "
+                    f"Active requests: {monitor_stats['active_requests']}"
+                )
                 await asyncio.sleep(300)  # Log every 5 minutes
             except Exception as e:
                 logger.error(f"❌ Error in heartbeat: {e}")
