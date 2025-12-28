@@ -7,30 +7,26 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
+  update-code:
+    name: Update Code on Server
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Deploy to server via SSH
+      - name: Pull latest code on server
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            # Navigate to project directory
             cd ${{ secrets.DEPLOY_PATH || '~/find-brilliant' }}
-            
-            # Pull latest changes
             git pull origin main
             
-            # Create .env if it doesn't exist
-            if [ ! -f .env ]; then
-              echo "Creating .env file..."
-              cat > .env << EOF
+            # Create/update .env file
+            cat > .env << 'EOF'
             API_ID=${{ secrets.API_ID }}
             API_HASH=${{ secrets.API_HASH }}
             PHONE_NUMBER=${{ secrets.PHONE_NUMBER }}
@@ -45,20 +41,72 @@ jobs:
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             DB_PORT=${{ secrets.DB_PORT || '5433' }}
             EOF
-            fi
             
-            # Stop old containers
-            docker-compose down
+            echo "✅ Code updated successfully"
+
+  deploy-database:
+    name: Deploy PostgreSQL Database
+    runs-on: ubuntu-latest
+    needs: update-code
+    
+    steps:
+      - name: Start/Restart PostgreSQL container
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH || '~/find-brilliant' }}
             
-            # Build and start new containers
-            docker-compose up -d --build
+            # Stop old postgres if exists
+            docker compose stop postgres || true
+            docker compose rm -f postgres || true
             
-            # Wait for services to be healthy
-            echo "Waiting for services to start..."
+            # Start postgres
+            docker compose up -d postgres
+            
+            # Wait for postgres to be healthy
+            echo "Waiting for PostgreSQL to be healthy..."
+            timeout 60 bash -c 'until docker compose ps postgres | grep -q "healthy"; do sleep 2; done' || echo "Warning: Timeout waiting for health check"
+            
+            # Show status
+            docker compose ps postgres
+            docker compose logs --tail=20 postgres
+            
+            echo "✅ Database deployed successfully"
+
+  deploy-application:
+    name: Deploy Application
+    runs-on: ubuntu-latest
+    needs: deploy-database
+    
+    steps:
+      - name: Start/Restart Application container
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH || '~/find-brilliant' }}
+            
+            # Stop old application if exists
+            docker compose stop telegram-userbot || true
+            docker compose rm -f telegram-userbot || true
+            
+            # Rebuild and start application
+            docker compose up -d --build telegram-userbot
+            
+            # Wait for application to start
+            echo "Waiting for application to start..."
             sleep 15
             
             # Show status
-            docker-compose ps
+            docker compose ps
+            docker compose logs --tail=50 telegram-userbot
             
-            # Show recent logs
-            docker-compose logs --tail=50
+            echo "✅ Application deployed successfully"
+            echo ""
+            echo "📊 Final Status:"
+            docker compose ps
