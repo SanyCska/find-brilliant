@@ -10,6 +10,21 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     
+    env:
+      API_ID: ${{ secrets.API_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
+      TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
+      TG_BOT_KEY: ${{ secrets.TG_BOT_KEY }}
+      KEYWORDS: ${{ secrets.KEYWORDS }}
+      SESSION_NAME: ${{ secrets.SESSION_NAME || 'data/userbot_session' }}
+      POLL_INTERVAL: ${{ secrets.POLL_INTERVAL || '30' }}
+      DB_HOST: ${{ secrets.DB_HOST || 'postgres' }}
+      DB_NAME: ${{ secrets.DB_NAME || 'find_brilliant' }}
+      DB_USER: ${{ secrets.DB_USER || 'postgres' }}
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      DB_PORT: ${{ secrets.DB_PORT || '5432' }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,17 +35,17 @@ jobs:
       - name: Create data directory
         run: mkdir -p data
       
+      - name: Create .env file placeholder (to avoid warnings)
+        run: |
+          touch .env
+          echo "# CI/CD - Variables come from GitHub Secrets" > .env
+      
       - name: Start PostgreSQL container
         run: |
           docker compose up -d postgres
           echo "Waiting for PostgreSQL to be healthy..."
           timeout 60 bash -c 'until docker compose ps postgres | grep -q "healthy"; do sleep 2; done'
           echo "PostgreSQL is ready!"
-        env:
-          DB_NAME: ${{ secrets.DB_NAME || 'find_brilliant' }}
-          DB_USER: ${{ secrets.DB_USER || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_PORT: ${{ secrets.DB_PORT || '5433' }}
       
       - name: Verify PostgreSQL is running
         run: |
@@ -39,20 +54,6 @@ jobs:
       
       - name: Start Telegram Userbot
         run: docker compose up -d telegram-userbot
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-          PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
-          TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
-          TG_BOT_KEY: ${{ secrets.TG_BOT_KEY }}
-          KEYWORDS: ${{ secrets.KEYWORDS }}
-          SESSION_NAME: ${{ secrets.SESSION_NAME || 'data/userbot_session' }}
-          POLL_INTERVAL: ${{ secrets.POLL_INTERVAL || '30' }}
-          DB_HOST: ${{ secrets.DB_HOST || 'postgres' }}
-          DB_NAME: ${{ secrets.DB_NAME || 'find_brilliant' }}
-          DB_USER: ${{ secrets.DB_USER || 'postgres' }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
       
       - name: Check service status
         run: |
