@@ -31,12 +31,6 @@ class Config:
         if kw.strip()
     ]
     
-    # Auto-reply settings
-    AUTO_REPLY_ENABLED: bool = os.getenv("AUTO_REPLY_ENABLED", "false").lower() == "true"
-    AUTO_REPLY_TEXT: str = os.getenv("AUTO_REPLY_TEXT", "Interested!")
-    AUTO_REPLY_MIN_DELAY: int = int(os.getenv("AUTO_REPLY_MIN_DELAY", "5"))
-    AUTO_REPLY_MAX_DELAY: int = int(os.getenv("AUTO_REPLY_MAX_DELAY", "15"))
-    
     # Session file name (stored in data directory)
     SESSION_NAME: str = os.getenv("SESSION_NAME", "data/userbot_session")
     
@@ -54,6 +48,16 @@ class Config:
         "@serbska_baraholka",
         "@MagicChestNS",
     ]
+    
+    # Database configuration
+    # DB_HOST should be:
+    #   - "postgres" when running in Docker (connects via Docker network)
+    #   - "localhost" when running locally outside Docker
+    DB_HOST: str = os.getenv("DB_HOST", "postgres")
+    DB_PORT: int = int(os.getenv("DB_PORT", "5432"))
+    DB_NAME: str = os.getenv("DB_NAME", "find_brilliant")
+    DB_USER: str = os.getenv("DB_USER", "postgres")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     
     @classmethod
     def validate(cls) -> None:
@@ -78,9 +82,6 @@ class Config:
         if not cls.KEYWORDS:
             errors.append("KEYWORDS is required (comma-separated list)")
         
-        if cls.AUTO_REPLY_ENABLED and not cls.AUTO_REPLY_TEXT:
-            errors.append("AUTO_REPLY_TEXT is required when AUTO_REPLY_ENABLED is true")
-        
         if not cls.CHAT_IDS:
             errors.append("CHAT_IDS must be configured in config.py (hardcoded)")
         
@@ -88,6 +89,19 @@ class Config:
         empty_chats = [i for i, chat in enumerate(cls.CHAT_IDS) if not chat or not str(chat).strip()]
         if empty_chats:
             errors.append(f"CHAT_IDS contains empty values at positions: {empty_chats}")
+        
+        # Database validation
+        if not cls.DB_HOST:
+            errors.append("DB_HOST is required")
+        
+        if not cls.DB_NAME:
+            errors.append("DB_NAME is required")
+        
+        if not cls.DB_USER:
+            errors.append("DB_USER is required")
+        
+        if not cls.DB_PASSWORD:
+            errors.append("DB_PASSWORD is required")
         
         if errors:
             raise ValueError(
@@ -106,10 +120,10 @@ class Config:
         print(f"TARGET_USER_ID: {cls.TARGET_USER_ID}")
         print(f"KEYWORDS: {cls.KEYWORDS}")
         print(f"CHAT_IDS: {cls.CHAT_IDS}")
-        print(f"AUTO_REPLY_ENABLED: {cls.AUTO_REPLY_ENABLED}")
-        if cls.AUTO_REPLY_ENABLED:
-            print(f"AUTO_REPLY_TEXT: {cls.AUTO_REPLY_TEXT}")
-            print(f"AUTO_REPLY_DELAY: {cls.AUTO_REPLY_MIN_DELAY}-{cls.AUTO_REPLY_MAX_DELAY}s")
         print(f"SESSION_NAME: {cls.SESSION_NAME}")
+        print(f"DB_HOST: {cls.DB_HOST}")
+        print(f"DB_PORT: {cls.DB_PORT}")
+        print(f"DB_NAME: {cls.DB_NAME}")
+        print(f"DB_USER: {cls.DB_USER}")
         print("=" * 60)
 

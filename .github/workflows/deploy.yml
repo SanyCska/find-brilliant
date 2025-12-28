@@ -1,101 +1,70 @@
-name: Deploy to Server
+name: Deploy Telegram Userbot
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # This creates the manual trigger button in GitHub UI
+  workflow_dispatch:
 
 jobs:
   deploy:
-    name: Deploy Application
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Deploy to server
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Create data directory
+        run: mkdir -p data
+      
+      - name: Start PostgreSQL container
+        run: |
+          docker compose up -d postgres
+          echo "Waiting for PostgreSQL to be healthy..."
+          timeout 60 bash -c 'until docker compose ps postgres | grep -q "healthy"; do sleep 2; done'
+          echo "PostgreSQL is ready!"
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          DB_NAME: ${{ secrets.DB_NAME || 'find_brilliant' }}
+          DB_USER: ${{ secrets.DB_USER || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_PORT: ${{ secrets.DB_PORT || '5433' }}
+      
+      - name: Verify PostgreSQL is running
+        run: |
+          docker compose ps
+          docker compose logs postgres
+      
+      - name: Start Telegram Userbot
+        run: docker compose up -d telegram-userbot
+        env:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           PHONE_NUMBER: ${{ secrets.PHONE_NUMBER }}
           TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
           TG_BOT_KEY: ${{ secrets.TG_BOT_KEY }}
           KEYWORDS: ${{ secrets.KEYWORDS }}
-          AUTO_REPLY_ENABLED: ${{ secrets.AUTO_REPLY_ENABLED }}
-          AUTO_REPLY_TEXT: ${{ secrets.AUTO_REPLY_TEXT }}
-          AUTO_REPLY_MIN_DELAY: ${{ secrets.AUTO_REPLY_MIN_DELAY }}
-          AUTO_REPLY_MAX_DELAY: ${{ secrets.AUTO_REPLY_MAX_DELAY }}
-        run: |
-          # Setup SSH
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
-          
-          # Create .env content
-          {
-            echo "API_ID=$API_ID"
-            echo "API_HASH=$API_HASH"
-            echo "PHONE_NUMBER=$PHONE_NUMBER"
-            echo "TARGET_USER_ID=$TARGET_USER_ID"
-            echo "TG_BOT_KEY=$TG_BOT_KEY"
-            echo "KEYWORDS=$KEYWORDS"
-            echo "AUTO_REPLY_ENABLED=${AUTO_REPLY_ENABLED:-false}"
-            echo "AUTO_REPLY_TEXT=$AUTO_REPLY_TEXT"
-            echo "AUTO_REPLY_MIN_DELAY=${AUTO_REPLY_MIN_DELAY:-5}"
-            echo "AUTO_REPLY_MAX_DELAY=${AUTO_REPLY_MAX_DELAY:-15}"
-            echo "SESSION_NAME=data/userbot_session"
-          } > /tmp/.env
-          
-          # Copy .env file to server
-          scp -i ~/.ssh/deploy_key /tmp/.env "${SSH_USER}@${SSH_HOST}:${DEPLOY_PATH}/.env"
-          
-          # Deploy to server
-          ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=60 -o ServerAliveCountMax=10 "${SSH_USER}@${SSH_HOST}" "cd ${DEPLOY_PATH} && bash -s" << 'ENDSSH'
-            set -e
-            
-            echo "==> Pulling latest code..."
-            git pull origin main
-            
-            echo "==> Creating data directory..."
-            mkdir -p data
-            
-            echo "==> Stopping existing containers..."
-            docker compose down || true
-            
-            echo "==> Building Docker image (this may take a few minutes)..."
-            docker compose build --no-cache
-            
-            echo "==> Starting containers..."
-            docker compose up -d
-            
-            echo "==> Waiting for container to be ready..."
-            sleep 5
-            
-            echo "==> Container status:"
-            docker compose ps
-            
-            echo "==> Deployment completed!"
-          ENDSSH
+          SESSION_NAME: ${{ secrets.SESSION_NAME || 'data/userbot_session' }}
+          POLL_INTERVAL: ${{ secrets.POLL_INTERVAL || '30' }}
+          DB_HOST: ${{ secrets.DB_HOST || 'postgres' }}
+          DB_NAME: ${{ secrets.DB_NAME || 'find_brilliant' }}
+          DB_USER: ${{ secrets.DB_USER || 'postgres' }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_PORT: ${{ secrets.DB_PORT || '5432' }}
       
-      - name: Verify deployment
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      - name: Check service status
         run: |
-          # Check if container is running
-          ssh -i ~/.ssh/deploy_key -o ServerAliveInterval=60 "${SSH_USER}@${SSH_HOST}" "cd ${DEPLOY_PATH} && bash -s" << 'ENDSSH'
-            echo "==> Container status:"
-            docker compose ps
-            echo ""
-            echo "==> Recent logs:"
-            docker compose logs --tail=30
-          ENDSSH
+          docker compose ps
+          docker compose logs --tail=50 telegram-userbot
+      
+      - name: Health check
+        run: |
+          sleep 10
+          docker compose ps
+          if docker compose ps | grep -q "unhealthy"; then
+            echo "Service is unhealthy"
+            docker compose logs
+            exit 1
+          fi

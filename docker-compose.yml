@@ -1,16 +1,62 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: find-brilliant-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${DB_NAME:-find_brilliant}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    # Port mapping for localhost access only (for database management tools)
+    # Change 5433 to any available port on your system
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   telegram-userbot:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: telegram-marketplace-monitor
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     
-    # Environment variables from .env file
+    # Environment variables
+    # For local: reads from .env file
+    # For CI/CD: uses environment variables from GitHub Secrets
     env_file:
       - .env
+    environment:
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+      - TARGET_USER_ID=${TARGET_USER_ID}
+      - TG_BOT_KEY=${TG_BOT_KEY}
+      - KEYWORDS=${KEYWORDS}
+      - PHONE_NUMBER=${PHONE_NUMBER}
+      - SESSION_NAME=${SESSION_NAME:-data/userbot_session}
+      - POLL_INTERVAL=${POLL_INTERVAL:-30}
+      # Database configuration
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME:-find_brilliant}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
     
     # Persist session, database, and logs in a data directory
     volumes:
@@ -35,5 +81,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+volumes:
+  postgres_data:
 
 

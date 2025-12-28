@@ -7,10 +7,11 @@ A production-ready Python userbot that monitors Telegram marketplace chats and f
 - 🔍 **Keyword Filtering** - Case-insensitive keyword matching
 - 📨 **Message Forwarding** - Forwards original messages (preserves media, author, etc.)
 - 🔒 **Duplicate Protection** - Never processes the same message twice (SQLite storage)
-- 💬 **Auto-Reply** - Optional automated replies with random delays (5-15s)
 - 🛡️ **Rate-Limit Safety** - Handles FloodWaitError gracefully
 - ⚡ **Real-time Only** - Monitors ONLY new messages (no history scanning)
 - 📊 **Logging** - Comprehensive logging to file and console
+- 🗄️ **PostgreSQL Database** - Store search requests, keywords, and groups per user
+- 🤖 **Bot Commands** - Manage searches via Telegram bot interface (`/search`, `/list`)
 
 ## 🚀 Quick Start
 
@@ -23,16 +24,19 @@ See [DOCKER.md](DOCKER.md) for detailed Docker setup instructions.
 **Quick Docker Start (Local Development):**
 ```bash
 # 1. Configure environment
-cp .env.example .env
-nano .env  # Add your credentials
+cp env.example .env
+nano .env  # Add your credentials (including DB_PASSWORD)
 
 # 2. Update config.py with your chat IDs
 
-# 3. Start the bot
+# 3. Start the bot (PostgreSQL + Userbot)
 docker-compose up -d
 
 # 4. View logs
 docker-compose logs -f
+
+# 5. Test database connection (optional)
+docker-compose exec telegram-userbot python db_utils.py test
 ```
 
 **For Production/CI-CD with GitHub Secrets:**
@@ -62,6 +66,17 @@ cd find-brilliant
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Set up PostgreSQL (local installation or Docker)
+# For Docker:
+docker run -d \
+  --name postgres \
+  -e POSTGRES_DB=find_brilliant \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=your_password \
+  -p 5432:5432 \
+  -v $(pwd)/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql \
+  postgres:16-alpine
 ```
 
 #### 4. Configuration
@@ -81,15 +96,13 @@ API_ID=12345678                    # Your Telegram API ID
 API_HASH=your_api_hash_here        # Your Telegram API hash
 TARGET_USER_ID=123456789           # Your Telegram user ID (get from @userinfobot)
 KEYWORDS=laptop,macbook,iphone     # Comma-separated keywords
-```
 
-**Optional settings:**
-
-```bash
-AUTO_REPLY_ENABLED=true
-AUTO_REPLY_TEXT=Hi! I'm interested in this. Is it still available?
-AUTO_REPLY_MIN_DELAY=5
-AUTO_REPLY_MAX_DELAY=15
+# Database configuration
+DB_HOST=localhost                  # postgres (for Docker), localhost (for external tools)
+DB_PORT=5433                       # External port (5433, localhost only)
+DB_NAME=find_brilliant             # Database name
+DB_USER=postgres                   # Database user
+DB_PASSWORD=your_secure_password   # Database password (REQUIRED)
 ```
 
 #### 5. Configure Monitored Chats
@@ -137,6 +150,74 @@ python main.py
 - Enter the code and your 2FA password (if enabled)
 - Session will be saved for future runs
 
+#### 7. Use the Bot Interface
+
+Once the bot is running, you can manage search requests via Telegram:
+
+```
+1. Open Telegram and find your bot
+2. Send /start to begin
+3. Use /search to create a new search request
+4. Use /list to view your active searches
+```
+
+**Bot Commands:**
+- `/start` - Welcome message and help
+- `/search` - Create a new search request (interactive)
+- `/list` - View all your active searches
+- `/help` - Show available commands
+
+## 🤖 Bot Commands
+
+The bot provides an interactive interface for managing search requests:
+
+### `/search` - Create Search Request
+
+Interactive conversation to create a new search:
+
+```
+1. Send /search to the bot
+2. Enter keywords (comma-separated): "iphone, macbook, laptop"
+3. Enter group usernames (with @): "@marketplace, @deals_channel"
+4. Bot fetches group info and saves to database
+5. Search is now active!
+```
+
+**Example conversation:**
+```
+You: /search
+Bot: Let's set up a new search! Enter keywords...
+
+You: iphone, iphone 15, macbook
+Bot: ✅ Keywords saved. Now enter group usernames...
+
+You: @NSbaraholka, @serbiasell
+Bot: ⏳ Fetching group information...
+     ✅ Search Request Created!
+     Keywords: iphone, iphone 15, macbook
+     Groups: NSbaraholka, serbiasell
+```
+
+### `/list` - View Searches
+
+Display all your active search requests:
+
+```
+You: /list
+Bot: 📋 Your Active Searches (2):
+     
+     🆔 ID: 1
+     📝 Title: Search: iphone, iphone 15, macbook
+     🔑 Keywords (3): iphone, iphone 15, macbook
+     📢 Groups (2): @NSbaraholka, @serbiasell
+```
+
+### Other Commands
+
+- `/start` - Welcome message and introduction
+- `/help` - Show available commands and usage
+- `/cancel` - Cancel current operation (during /search)
+
 ## 📁 Project Structure
 
 ```
@@ -145,31 +226,30 @@ project/
 ├── config.py                  # Configuration management
 ├── filters.py                 # Keyword filtering logic
 ├── notifier.py                # Message forwarding logic
+├── bot_handler.py             # Bot command handlers (/search, /list)
 ├── storage.py                 # Duplicate detection storage
+├── database.py                # PostgreSQL database module
+├── db_utils.py                # Database utilities and management
+├── init_db.sql                # Database initialization script
 ├── requirements.txt           # Python dependencies
 │
-├── .env.example               # Example configuration
+├── env.example                # Example configuration
 ├── .env                       # Your actual configuration (git-ignored)
 │
 ├── Dockerfile                 # Docker image definition
-├── docker-compose.yml         # Docker Compose for local dev
-├── docker-compose.ci.yml      # Docker Compose for CI/CD (uses secrets)
+├── docker-compose.yml         # Docker Compose (works for local & CI/CD)
 ├── .dockerignore              # Files to exclude from Docker
 │
 ├── .github/workflows/         # GitHub Actions workflows
-│   ├── ci.yml                 # CI/CD pipeline
-│   ├── deploy.yml             # Deployment workflow
-│   ├── manual-tasks.yml       # Manual utility tasks
-│   └── setup-secrets.yml      # Server secrets setup
+│   └── deploy.yml             # Deployment workflow
 │
 ├── README.md                  # This file
-├── DOCKER.md                  # Docker setup guide
-├── GITHUB_ACTIONS.md          # GitHub Actions guide
-├── SECRETS_SETUP.md           # GitHub Secrets setup guide
 │
-├── userbot_session.session    # Telegram session (auto-created)
-├── processed_messages.db      # SQLite database (auto-created)
-└── userbot.log                # Log file (auto-created)
+├── data/                      # Data directory (auto-created)
+│   ├── userbot_session.session    # Telegram session
+│   ├── processed_messages.db      # SQLite database (legacy)
+│   └── userbot.log                # Log file
+└── postgres_data/             # PostgreSQL data volume (Docker)
 ```
 
 ## 🔧 Configuration Reference
@@ -182,11 +262,12 @@ project/
 | `API_HASH` | ✅ | - | Telegram API hash |
 | `TARGET_USER_ID` | ✅ | - | User ID to forward messages to |
 | `KEYWORDS` | ✅ | - | Comma-separated keywords |
-| `AUTO_REPLY_ENABLED` | ❌ | false | Enable auto-reply |
-| `AUTO_REPLY_TEXT` | ❌ | "Interested!" | Auto-reply message |
-| `AUTO_REPLY_MIN_DELAY` | ❌ | 5 | Minimum delay (seconds) |
-| `AUTO_REPLY_MAX_DELAY` | ❌ | 15 | Maximum delay (seconds) |
 | `SESSION_NAME` | ❌ | userbot_session | Session file name |
+| `DB_HOST` | ✅ | localhost | PostgreSQL host |
+| `DB_PORT` | ❌ | 5433 | PostgreSQL port (external, localhost only) |
+| `DB_NAME` | ❌ | find_brilliant | Database name |
+| `DB_USER` | ❌ | postgres | Database user |
+| `DB_PASSWORD` | ✅ | - | Database password |
 
 ### Hardcoded Settings (config.py)
 
@@ -217,8 +298,6 @@ project/
 # .env
 KEYWORDS=laptop,macbook,iphone,ipad,airpods,gaming pc
 TARGET_USER_ID=123456789
-AUTO_REPLY_ENABLED=true
-AUTO_REPLY_TEXT=Hi! Is this still available? What's your best price?
 ```
 
 ```python
@@ -229,13 +308,117 @@ CHAT_IDS = [
 ]
 ```
 
-### Example 2: Monitor without auto-reply
+### Example 2: Monitor multiple marketplaces
 
 ```bash
 # .env
 KEYWORDS=bicycle,bike,mtb,road bike
 TARGET_USER_ID=123456789
-AUTO_REPLY_ENABLED=false
+```
+
+## 🗄️ Database Management
+
+### Database Schema
+
+The PostgreSQL database consists of 5 tables:
+
+1. **users** - Stores Telegram users
+   - `id` (primary key), `telegram_id`, `username`, `first_name`, `last_name`, `created_at`
+
+2. **telegram_groups** - Stores unique Telegram groups (shared)
+   - `telegram_group_id` (primary key), `username`, `title`, `created_at`, `updated_at`
+
+3. **search_requests** - Main search request entity
+   - `id` (primary key), `user_id`, `title`, `is_active`, `created_at`
+
+4. **search_request_keywords** - Keywords for each request
+   - `id` (primary key), `search_request_id`, `keyword`
+
+5. **search_request_groups** - Links requests to groups (many-to-many)
+   - `id` (primary key), `search_request_id`, `telegram_group_id` (FK), `created_at`
+
+### Database Utilities
+
+The `db_utils.py` script provides database management commands:
+
+```bash
+# Test database connection
+python db_utils.py test
+
+# Create sample data for testing
+python db_utils.py sample
+
+# List all active search requests
+python db_utils.py list
+
+# Display all unique Telegram groups
+python db_utils.py groups
+
+# Show database initialization info
+python db_utils.py init
+```
+
+### Using the Database Module
+
+You can manage searches programmatically:
+
+```python
+from database import get_database_from_env
+
+# Connect to database
+db = get_database_from_env()
+
+# Create a user
+user_id = db.create_user(
+    telegram_id=123456789,
+    username="john_doe",
+    first_name="John",
+    last_name="Doe"
+)
+
+# Create a search request
+request_id = db.create_search_request(
+    user_id=user_id,
+    title="iPhone Search",
+    is_active=True
+)
+
+# Add keywords
+db.add_keywords(request_id, ["iphone", "iphone 15"])
+
+# Add groups
+db.add_groups(request_id, [
+    {"telegram_group_id": -1001234567890, "username": "marketplace"}
+])
+
+# Get all active requests with details
+requests = db.get_all_active_search_requests_with_details()
+for req in requests:
+    print(f"Request: {req['title']}")
+    print(f"Keywords: {[k['keyword'] for k in req['keywords']]}")
+    print(f"Groups: {[g['username'] for g in req['groups']]}")
+
+# Close connection
+db.close()
+```
+
+**Or use the bot interface:**
+
+Simply send `/search` to your bot and follow the interactive prompts!
+
+### Database Reset
+
+To completely reset the database:
+
+```bash
+# Stop containers
+docker-compose down
+
+# Remove PostgreSQL volume
+docker volume rm find-brilliant_postgres_data
+
+# Start again (will run init_db.sql)
+docker-compose up -d
 ```
 
 ## 🐛 Troubleshooting
@@ -262,6 +445,12 @@ AUTO_REPLY_ENABLED=false
 - Delete the `.session` file and re-authenticate
 - Make sure your API credentials are correct
 
+### Database connection errors
+- Ensure PostgreSQL container is running: `docker-compose ps`
+- Check database credentials in `.env`
+- Test connection: `python db_utils.py test`
+- View PostgreSQL logs: `docker-compose logs postgres`
+
 ## 📝 Logging
 
 Logs are written to both console and `userbot.log`:
@@ -280,8 +469,8 @@ Logs are written to both console and `userbot.log`:
 - See [DOCKER.md](DOCKER.md)
 
 ### Production Server
-- Use GitHub Secrets with `docker-compose.ci.yml`
-- See [SECRETS_SETUP.md](SECRETS_SETUP.md)
+- Use GitHub Secrets with `docker-compose.yml`
+- Configure secrets in GitHub repository settings
 
 ### CI/CD with GitHub Actions
 - Automated testing, building, and deployment

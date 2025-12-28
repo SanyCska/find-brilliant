@@ -13,6 +13,7 @@ from config import Config
 from storage import MessageStorage
 from filters import KeywordFilter
 from notifier import BotNotifier
+from bot_handler import BotCommandHandler
 
 # Configure logging
 import os
@@ -50,8 +51,8 @@ class TelegramMarketplaceBot:
         self.keyword_filter = KeywordFilter(Config.KEYWORDS)
         self.notifier = BotNotifier(Config.TG_BOT_KEY, Config.TARGET_USER_ID)
         
-        # Track ongoing auto-reply tasks to prevent duplicates
-        self._reply_tasks = set()
+        # Bot command handler for managing search requests
+        self.bot_handler = None
     
     async def start(self):
         """Start the userbot."""
@@ -105,6 +106,17 @@ class TelegramMarketplaceBot:
         
         logger.info("✅ Event handlers registered")
         logger.info("👀 Now monitoring for new messages...")
+        
+        # Start bot command handler
+        try:
+            self.bot_handler = BotCommandHandler(Config.TG_BOT_KEY, self.client)
+            await self.bot_handler.start_bot()
+            logger.info("✅ Bot command handler started")
+            logger.info("   Send /start to the bot to begin!")
+        except Exception as e:
+            logger.error(f"❌ Failed to start bot command handler: {e}")
+            logger.info("   Continuing without bot commands...")
+        
         logger.info("⚠️  Press Ctrl+C to stop")
         logger.info("")
         logger.info("🟢 BOT IS ACTIVE - Waiting for messages...")
@@ -194,10 +206,6 @@ class TelegramMarketplaceBot:
             
             if success:
                 logger.info("✅ Message forwarded successfully")
-                
-                # Auto-reply if enabled
-                if Config.AUTO_REPLY_ENABLED:
-                    await self.schedule_auto_reply(message)
             else:
                 logger.error("❌ Failed to forward message")
             
@@ -206,66 +214,6 @@ class TelegramMarketplaceBot:
             
         except Exception as e:
             logger.error(f"❌ Error processing message {message.id}: {e}", exc_info=True)
-    
-    async def schedule_auto_reply(self, message: Message):
-        """
-        Schedule an auto-reply to a message with random delay.
-        
-        Args:
-            message: Message to reply to
-        """
-        # Create unique identifier for this reply task
-        task_id = (message.chat_id, message.id)
-        
-        if task_id in self._reply_tasks:
-            logger.debug(f"⏭️  Auto-reply already scheduled for message {message.id}")
-            return
-        
-        self._reply_tasks.add(task_id)
-        
-        # Calculate random delay
-        delay = random.randint(
-            Config.AUTO_REPLY_MIN_DELAY,
-            Config.AUTO_REPLY_MAX_DELAY
-        )
-        
-        logger.info(f"⏰ Scheduling auto-reply in {delay} seconds")
-        
-        # Schedule the reply
-        asyncio.create_task(self._send_auto_reply(message, delay, task_id))
-    
-    async def _send_auto_reply(self, message: Message, delay: int, task_id: tuple):
-        """
-        Send an auto-reply after a delay.
-        
-        Args:
-            message: Message to reply to
-            delay: Delay in seconds
-            task_id: Unique identifier for this task
-        """
-        try:
-            # Wait for the random delay
-            await asyncio.sleep(delay)
-            
-            # Send the reply
-            await self.client.send_message(
-                entity=message.peer_id,
-                message=Config.AUTO_REPLY_TEXT,
-                reply_to=message.id
-            )
-            
-            logger.info(f"💬 Auto-reply sent to message {message.id}")
-            
-        except FloodWaitError as e:
-            logger.warning(f"⚠️ FloodWaitError on auto-reply: Need to wait {e.seconds} seconds")
-            # Don't retry auto-reply on FloodWait
-            
-        except Exception as e:
-            logger.error(f"❌ Error sending auto-reply: {e}")
-            
-        finally:
-            # Remove from active tasks
-            self._reply_tasks.discard(task_id)
     
     async def _check_last_messages(self):
         """Check and display the last message from each monitored chat."""
@@ -427,6 +375,13 @@ class TelegramMarketplaceBot:
     async def stop(self):
         """Stop the userbot gracefully."""
         logger.info("🛑 Stopping userbot...")
+        
+        # Stop bot command handler
+        if self.bot_handler:
+            try:
+                await self.bot_handler.stop_bot()
+            except Exception as e:
+                logger.error(f"❌ Error stopping bot handler: {e}")
         
         # Show statistics
         stats = self.storage.get_stats()
