@@ -77,4 +77,3 @@ def fix_group_ids():
 
 if __name__ == "__main__":
     fix_group_ids()
-

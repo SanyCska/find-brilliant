@@ -31,6 +31,9 @@ logging.basicConfig(
     ]
 )
 
+# Silence httpx INFO logs (HTTP requests)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 
@@ -169,7 +172,6 @@ class TelegramMarketplaceBot:
                 media_info += " [📎 file]"
             
             logger.info(f"📩 New message from '{chat_name}'{media_info}")
-            logger.info(f"   Author: {sender_name} | Msg ID: {message.id}")
             logger.info(f"   Text: {message_preview}{'...' if message.text and len(message.text) > 80 else ''}")
             
             # Skip if already processed (duplicate protection)
@@ -181,7 +183,6 @@ class TelegramMarketplaceBot:
             matches = self.monitoring_manager.check_message(message.chat_id, message.text)
             
             if not matches:
-                logger.info(f"   ⏩ No keyword match for any active search request")
                 # Mark as processed even if no match to avoid re-checking
                 self.storage.mark_processed(message.chat_id, message.id)
                 return

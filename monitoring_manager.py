@@ -108,7 +108,7 @@ class MonitoringManager:
             # Log details for each monitored group
             for group_id in self.monitored_group_ids:
                 monitors = self.group_monitors[group_id]
-                logger.info(
+                logger.debug(
                     f"   Group {group_id}: {len(monitors)} active search request(s)"
                 )
             
@@ -184,7 +184,7 @@ class MonitoringManager:
                 )
                 matches.append((user_telegram_id, matched_keywords, request_id))
             else:
-                logger.info(
+                logger.debug(
                     f"❌ No match for request {request_id}"
                 )
         

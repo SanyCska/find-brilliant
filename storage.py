@@ -190,5 +190,3 @@ class InMemoryStorage:
         return {
             "total_processed": len(self._processed)
         }
-
-
